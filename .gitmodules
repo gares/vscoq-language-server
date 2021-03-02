@@ -1,0 +1,7 @@
+[submodule "coq"]
+	path = coq
+	url = https://github.com/coq/coq
+[submodule "vscoq"]
+	path = vscoq
+	url = https://github.com/maximedenes/vscoq
+	branch = document-manager
