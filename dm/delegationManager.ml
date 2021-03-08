@@ -31,6 +31,7 @@ let write_value { write_to; _ } x =
   log @@ Printf.sprintf "marshaling %d bytes" datalength;
   let writeno = Unix.write write_to data 0 datalength in
   assert(writeno = datalength);
+  log @@ Printf.sprintf "marshaling done";
   flush_all ()
 
 module type Job = sig
@@ -77,7 +78,7 @@ module MakeWorker (Job : Job) = struct
 let debug_worker = CDebug.create ~name:("vscoq.Worker." ^ Job.name) ()
 
 let log_worker msg = debug_worker Pp.(fun () ->
-  str @@ Format.asprintf "     [%d] %s" (Unix.getpid ()) msg)
+  str @@ Format.asprintf "    [%d] %s" (Unix.getpid ()) msg)
 
 let install_feedback_worker link =
   Feedback.del_feeder master_feeder;

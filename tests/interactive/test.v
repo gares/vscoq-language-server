@@ -1,4 +1,7 @@
-Lemma x : True.
+Lemma x : True /\ True.
 Proof using.
-trivial.
+split.
+par: exact I.
 Qed.
+
+Print x.
