@@ -52,7 +52,7 @@ val map : ('a -> 'b) -> 'a event -> 'b event
     let rec loop evs =
       let ready, waiting = wait evs in
       let new_evs_l = List.map handle_event ready in
-      loop (evs @ List.concat new_evs_l)
+      loop (waiting @ List.concat new_evs_l)
 
     let main () =
       loop [echo; ...]
