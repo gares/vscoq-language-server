@@ -22,87 +22,6 @@ type execution_status = DelegationManager.execution_status =
 let success vernac_st = Success (Some vernac_st)
 let error loc msg vernac_st = Error ((loc,msg),(Some vernac_st))
 
-type prepared_task =
-  | PSkip of sentence_id
-  | PExec of sentence_id * ast
-  | PDelegate of { terminator_id: sentence_id;
-                   opener_id: sentence_id;
-                   last_step_id: sentence_id;
-                   tasks: prepared_task list;
-                 }
-
-type job = {
-  tasks : prepared_task list;
-  initial_vernac_state : Vernacstate.t;
-  doc_id : int;
-  terminator_id : sentence_id;
-  last_proof_step_id : sentence_id;
-}
-
-module ProofJob = struct
-  type update_request =
-    | UpdateExecStatus of sentence_id * execution_status
-    | AppendFeedback of sentence_id * (Feedback.level * Loc.t option * Pp.t)
-  let appendFeedback id fb = AppendFeedback(id,fb)
-
-  type t = job
-  let name = "proof"
-  let binary_name = "vscoqtop_proof_worker.opt"
-  let pool_size = 1
-
-end
-
-module ProofWorker = DelegationManager.MakeWorker(ProofJob)
-
-type execution =
-  | ProofWorkerEvent of ProofWorker.delegation
-  | LocalFeedback of sentence_id * (Feedback.level * Loc.t option * Pp.t)
-  (*| TacticWorkerEvent of Declare.Proof.event*)
-type events = execution Sel.event list
-
-let pr_event = function
-  | ProofWorkerEvent event -> ProofWorker.pr_event event
-  | LocalFeedback _ -> Pp.str "LocalFeedback"
-
-let interp_ast ~doc_id ~state_id vernac_st ast =
-    Feedback.set_id_for_feedback doc_id state_id;
-    Sys.(set_signal sigint (Signal_handle(fun _ -> raise Break)));
-    let result =
-      try Ok(Vernacinterp.interp ~st:vernac_st ast,[])
-      with e when CErrors.noncritical e ->
-        let e, info = Exninfo.capture e in
-        Error (e, info) in
-    Sys.(set_signal sigint Signal_ignore);
-    match result with
-    | Ok (vernac_st, events) ->
-        log @@ "[V] Executed: " ^ Stateid.to_string state_id ^ "  " ^ (Pp.string_of_ppcmds @@ Ppvernac.pr_vernac ast) ^
-          " (" ^ (if Option.is_empty vernac_st.Vernacstate.lemmas then "no proof" else "proof")  ^ ")";
-        vernac_st, success vernac_st, (*List.map inject_pm_event*) events
-    | Error (Sys.Break, _ as exn) ->
-        log @@ "[V] Interrupted executing: " ^ (Pp.string_of_ppcmds @@ Ppvernac.pr_vernac ast);
-        Exninfo.iraise exn
-    | Error (e, info) ->
-        log @@ "[V] Failed to execute: " ^ Stateid.to_string state_id ^ "  " ^ (Pp.string_of_ppcmds @@ Ppvernac.pr_vernac ast);
-        let loc = Loc.get_loc info in
-        let msg = CErrors.iprint (e, info) in
-        vernac_st, error loc (Pp.string_of_ppcmds msg) vernac_st,[]
-
-let interp_qed_delayed ~state_id vernac_st =
-  let f proof =
-    let fix_exn x = x in (* FIXME *)
-    let f, assign = Future.create_delegate ~blocking:false ~name:"XX" fix_exn in
-    Declare.Proof.close_future_proof ~feedback_id:state_id proof f, assign
-  in
-  let lemmas = Option.get @@ vernac_st.Vernacstate.lemmas in
-  let proof, assign = Vernacstate.LemmaStack.with_top lemmas ~f in
-  let control = [] (* FIXME *) in
-  let opaque = Vernacexpr.Opaque in
-  let pending = CAst.make @@ Vernacexpr.Proved (opaque, None) in
-  log "calling interp_qed_delayed done";
-  let vernac_st = Vernacinterp.interp_qed_delayed_proof ~proof ~st:vernac_st ~control pending in
-  log "interp_qed_delayed done";
-  vernac_st, success vernac_st, assign
-
 type sentence_id = Stateid.t
 type ast = Vernacexpr.vernac_control
 
@@ -119,17 +38,95 @@ type state = {
   of_sentence : (sentence_state * feedback_message list) SM.t;
 }
 
-type progress_hook = unit -> unit
-
-let init_master vernac_state = {
+let init vernac_state = {
   initial = vernac_state;
   of_sentence = SM.empty;
 }
 
-let inject_dm_event = Sel.map (fun x -> ProofWorkerEvent x)
+type prepared_task =
+  | PSkip of sentence_id
+  | PExec of sentence_id * ast
+  | PDelegate of { terminator_id: sentence_id;
+                   opener_id: sentence_id;
+                   last_step_id: sentence_id;
+                   tasks: prepared_task list;
+                 }
 
-let inject_dm_events st l =
-  (st, List.map inject_dm_event l)
+module ProofJob = struct
+  type update_request =
+    | UpdateExecStatus of sentence_id * execution_status
+    | AppendFeedback of sentence_id * (Feedback.level * Loc.t option * Pp.t)
+  let appendFeedback id fb = AppendFeedback(id,fb)
+
+  type t = {
+    tasks : prepared_task list;
+    initial_vernac_state : Vernacstate.t;
+    doc_id : int;
+    terminator_id : sentence_id;
+    last_proof_step_id : sentence_id;
+  }
+  let name = "proof"
+  let binary_name = "vscoqtop_proof_worker.opt"
+  let pool_size = 1
+
+end
+
+module ProofWorker = DelegationManager.MakeWorker(ProofJob)
+
+
+type execution =
+  | LocalFeedback of sentence_id * (Feedback.level * Loc.t option * Pp.t)
+  | ProofWorkerEvent of ProofWorker.delegation
+type events = execution Sel.event list
+let pr_event = function
+  | LocalFeedback _ -> Pp.str "LocalFeedback"
+  | ProofWorkerEvent event -> ProofWorker.pr_event event
+
+let inject_proof_event = Sel.map (fun x -> ProofWorkerEvent x)
+let inject_proof_events st l =
+  (st, List.map inject_proof_event l)
+
+
+(* just a wrapper around vernac interp *)
+let interp_ast ~doc_id ~state_id vernac_st ast =
+    Feedback.set_id_for_feedback doc_id state_id;
+    Sys.(set_signal sigint (Signal_handle(fun _ -> raise Break)));
+    let result =
+      try Ok(Vernacinterp.interp ~st:vernac_st ast,[])
+      with e when CErrors.noncritical e ->
+        let e, info = Exninfo.capture e in
+        Error (e, info) in
+    Sys.(set_signal sigint Signal_ignore);
+    match result with
+    | Ok (vernac_st, events) ->
+        log @@ "Executed: " ^ Stateid.to_string state_id ^ "  " ^ (Pp.string_of_ppcmds @@ Ppvernac.pr_vernac ast) ^
+          " (" ^ (if Option.is_empty vernac_st.Vernacstate.lemmas then "no proof" else "proof")  ^ ")";
+        vernac_st, success vernac_st, (*List.map inject_pm_event*) events
+    | Error (Sys.Break, _ as exn) ->
+        log @@ "Interrupted executing: " ^ (Pp.string_of_ppcmds @@ Ppvernac.pr_vernac ast);
+        Exninfo.iraise exn
+    | Error (e, info) ->
+        log @@ "Failed to execute: " ^ Stateid.to_string state_id ^ "  " ^ (Pp.string_of_ppcmds @@ Ppvernac.pr_vernac ast);
+        let loc = Loc.get_loc info in
+        let msg = CErrors.iprint (e, info) in
+        vernac_st, error loc (Pp.string_of_ppcmds msg) vernac_st,[]
+
+(* This adapts the Future API with our event model *)
+let interp_qed_delayed ~state_id vernac_st =
+  let f proof =
+    let fix_exn x = x in (* FIXME *)
+    let f, assign = Future.create_delegate ~blocking:false ~name:"XX" fix_exn in
+    Declare.Proof.close_future_proof ~feedback_id:state_id proof f, assign
+  in
+  let lemmas = Option.get @@ vernac_st.Vernacstate.lemmas in
+  let proof, assign = Vernacstate.LemmaStack.with_top lemmas ~f in
+  let control = [] (* FIXME *) in
+  let opaque = Vernacexpr.Opaque in
+  let pending = CAst.make @@ Vernacexpr.Proved (opaque, None) in
+  log "calling interp_qed_delayed done";
+  let vernac_st = Vernacinterp.interp_qed_delayed_proof ~proof ~st:vernac_st ~control pending in
+  log "interp_qed_delayed done";
+  vernac_st, success vernac_st, assign
 
 let update_all id v fl state =
   { state with of_sentence = SM.add id (v, fl) state.of_sentence }
@@ -167,8 +164,7 @@ let handle_event event state =
             | (Done _, fl) -> None (* TODO: is this possible? *)
             | exception Not_found -> None (* TODO: is this possible? *)
       in
-      inject_dm_events state events
-
+      inject_proof_events state events
 
 let find_fulfilled_opt x m =
   try
@@ -178,7 +174,7 @@ let find_fulfilled_opt x m =
     | Delegated _ -> None
   with Not_found -> None
 
-let jobs : (DelegationManager.job_id * job) Queue.t = Queue.create ()
+let jobs : (DelegationManager.job_id * ProofJob.t) Queue.t = Queue.create ()
 
 let remotize doc id =
   match Document.get_sentence doc id with
@@ -189,7 +185,7 @@ let remotize doc id =
     | Document.ParseError _ -> PSkip id
     end
 
-let prepare_task ~progress_hook doc task : prepared_task =
+let prepare_task doc task : prepared_task =
   match task with
   | Skip id -> PSkip id
   | Exec(id,ast) -> PExec(id,ast)
@@ -225,7 +221,7 @@ let worker_execute ~doc_id last_step_id ~send_back (vs,events) = function
     (vs, events @ ev)
   | _ -> assert false
 
-let worker_main { tasks; initial_vernac_state = vs; doc_id; last_proof_step_id; _ } ~send_back =
+let worker_main { ProofJob.tasks; initial_vernac_state = vs; doc_id; last_proof_step_id; _ } ~send_back =
   let _ = List.fold_left (worker_execute ~doc_id last_proof_step_id ~send_back) (vs,[]) tasks in
   flush_all ();
   exit 0
@@ -247,7 +243,7 @@ let execute ~doc_id st (vs, events, interrupted) task =
       | PDelegate { terminator_id; opener_id; last_step_id; tasks } ->
           begin match find_fulfilled_opt opener_id st.of_sentence with
           | Some (Success _) ->
-            let job =  { tasks; initial_vernac_state = vs; doc_id; terminator_id; last_proof_step_id  = last_step_id } in
+            let job =  { ProofJob.tasks; initial_vernac_state = vs; doc_id; terminator_id; last_proof_step_id  = last_step_id } in
             let job_id = DelegationManager.mk_job_id () in
             (* The proof was successfully opened *)
             let last_vs, v, assign = interp_qed_delayed ~state_id:terminator_id vs in
@@ -277,7 +273,7 @@ let execute ~doc_id st (vs, events, interrupted) task =
             let e =
               ProofWorker.worker_available ~jobs
                 ~fork_action:worker_main in
-            (st, last_vs,events @ [inject_dm_event e] ,false)
+            (st, last_vs,events @ [inject_proof_event e] ,false)
           | _ ->
             (* If executing the proof opener failed, we skip the proof *)
             let st = update st terminator_id (success vs) in
@@ -287,19 +283,19 @@ let execute ~doc_id st (vs, events, interrupted) task =
       let st = update st (id_of_prepared_task task) (Error ((None,"interrupted"),None)) in
       (st, vs, events, true)
 
-let build_tasks_for ~progress_hook doc st id =
+let build_tasks_for doc st id =
   let rec build_tasks id tasks =
     begin match find_fulfilled_opt id st.of_sentence with
     | Some (Success (Some vs)) ->
       (* We reached an already computed state *)
-      log @@ "[M] Reached computed state " ^ Stateid.to_string id;
+      log @@ "Reached computed state " ^ Stateid.to_string id;
       vs, tasks
     | Some (Error(_,Some vs)) ->
       (* We try to be resilient to an error *)
-      log @@ "[M] Error resiliency on state " ^ Stateid.to_string id;
+      log @@ "Error resiliency on state " ^ Stateid.to_string id;
       vs, tasks
     | _ ->
-      log @@ "[M] Non (locally) computed state " ^ Stateid.to_string id;
+      log @@ "Non (locally) computed state " ^ Stateid.to_string id;
       let (base_id, task) = task_for_sentence (Document.schedule doc) id in
       begin match base_id with
       | None -> (* task should be executed in initial state *)
@@ -310,7 +306,7 @@ let build_tasks_for ~progress_hook doc st id =
     end
   in
   let vs, tasks = build_tasks id [] in
-  vs, List.map (prepare_task ~progress_hook doc) tasks
+  vs, List.map (prepare_task doc) tasks
 
 let errors st =
   List.fold_left (fun acc (id, (p,_)) ->
@@ -352,8 +348,6 @@ let is_remotely_executed st id =
   | Some (Success None | Error (_,None)) -> true
   | _ -> false
 
-let query id st ast = assert false
-
 let invalidate1 of_sentence id =
   try
     let p,_ = SM.find id of_sentence in
@@ -370,7 +364,7 @@ let rec invalidate schedule id st =
   let old_jobs = Queue.copy jobs in
   let removed = ref [] in
   Queue.clear jobs;
-  Queue.iter (fun ((_, { terminator_id; tasks }) as job) -> if terminator_id != id then Queue.push job jobs else removed := tasks :: !removed) old_jobs;
+  Queue.iter (fun ((_, { ProofJob.terminator_id; tasks }) as job) -> if terminator_id != id then Queue.push job jobs else removed := tasks :: !removed) old_jobs;
   let of_sentence = List.fold_left invalidate1 of_sentence
     List.(concat (map (fun tasks -> map id_of_prepared_task tasks) !removed)) in
   if of_sentence == st.of_sentence then st else
@@ -402,115 +396,5 @@ module ProofWorkerProcess = struct
     let send_back, job = ProofWorker.setup_plumbing options in
     worker_main job ~send_back
   let log = ProofWorker.log
-end
-
-module TacticJob = struct
-  type solution =
-    | Solved of Constr.t * UState.t
-    | NoProgress
-    | Error of Pp.t
-  type update_request =
-    | UpdateSolution of Evar.t * solution
-    | AppendFeedback of sentence_id * (Feedback.level * Loc.t option * Pp.t)
-  let appendFeedback id fb = AppendFeedback(id,fb)
-
-  type t =  {
-    state    : Vernacstate.t;
-    ast      : ComTactic.interpretable;
-    goalno   : int;
-    goal     : Goal.goal;
-    name     : string }
-  let name = "tactic"
-  let binary_name = "vscoqtop_tactic_worker.opt"
-  let pool_size = 2
-
-end
-
-module TacticWorker = DelegationManager.MakeWorker(TacticJob)
-
-let assign_tac ~abstract res : unit Proofview.tactic =
-  Proofview.(Goal.enter begin fun g ->
-    let gid = Goal.goal g in
-    try
-      let pt, uc = List.assoc gid res in
-      let open Notations in
-      let push_state ctx =
-          Proofview.tclEVARMAP >>= fun sigma ->
-          Proofview.Unsafe.tclEVARS (Evd.merge_universe_context sigma ctx)
-      in
-      (if abstract then Abstract.tclABSTRACT None else (fun x -> x))
-          (push_state uc <*> Tactics.exact_no_check (EConstr.of_constr pt))
-    with Not_found -> tclUNIT ()
-  end)
-
-let command_focus = Proof.new_focus_kind ()
-
-let worker_solve_one_goal { TacticJob.state; ast; goalno; goal; name } ~send_back =
-  let focus_cond = Proof.no_cond command_focus in
-  Vernacstate.unfreeze_interp_state state;
-  try
-    Vernacstate.LemmaStack.with_top (Option.get state.Vernacstate.lemmas) ~f:(fun pstate ->
-    let pstate = Declare.Proof.map pstate ~f:(Proof.focus focus_cond () goalno) in
-    let pstate = ComTactic.solve ~pstate Goal_select.SelectAll ~info:None ast ~with_end_tac:false in
-    let { Proof.sigma } = Declare.Proof.fold pstate ~f:Proof.data in
-    match Evd.(evar_body (find sigma goal)) with
-    | Evd.Evar_empty -> send_back (TacticJob.UpdateSolution (goal,TacticJob.NoProgress))
-    | Evd.Evar_defined t ->
-        let t = Evarutil.nf_evar sigma t in
-        let evars = Evarutil.undefined_evars_of_term sigma t in
-        if Evar.Set.is_empty evars then
-          let t = EConstr.Unsafe.to_constr t in
-          send_back (TacticJob.UpdateSolution (goal,TacticJob.Solved(t, Evd.evar_universe_context sigma)))
-        else
-          CErrors.user_err ~hdr:"EM"
-            Pp.(str"The par: selector requires a tactic that makes no progress or fully" ++
-                str" solves the goal and leaves no unresolved existential variables. The following" ++
-                str" existentials remain unsolved: " ++ prlist (Termops.pr_existential_key sigma) (Evar.Set.elements evars))
-    )
-  with e when CErrors.noncritical e ->
-    send_back (TacticJob.UpdateSolution (goal, TacticJob.Error Pp.(CErrors.print e ++ spc() ++ str "(for subgoal "++int goalno ++ str ")")))
-
-let interp_par ~pstate ~info ast ~abstract ~with_end_tac : Declare.Proof.t =
-  let state = Vernacstate.freeze_interp_state ~marshallable:true in
-  let queue = Queue.create () in
-  let events, job_ids = List.split @@
-    Declare.Proof.fold pstate ~f:(fun p ->
-     (Proof.data p).Proof.goals |> CList.map_i (fun goalno goal ->
-       let job = { TacticJob.state; ast; goalno; goal; name = Goal.uid goal} in
-       let job_id = DelegationManager.mk_job_id () in
-       Queue.push (job_id,job) queue;
-       TacticWorker.worker_available ~jobs:queue ~fork_action:worker_solve_one_goal, job_id
-        ) 0) in
-  let rec wait ready evs =
-    let more_ready, waiting = Sel.wait evs in
-    let updates, more_waiting_l = List.split (List.map TacticWorker.handle_event more_ready) in
-    let rec do_updates acc = function
-      | [] ->
-          if waiting = [] then acc
-          else wait acc (List.concat (waiting :: more_waiting_l))
-      | None :: updates -> do_updates acc updates
-      | Some(TacticJob.UpdateSolution(ev,TacticJob.Solved(c,u))) :: updates -> do_updates ((ev,(c,u)) :: acc) updates
-      | Some(TacticJob.AppendFeedback _) :: updates -> do_updates acc updates
-      | Some(TacticJob.UpdateSolution(ev,TacticJob.NoProgress)) :: updates ->
-          do_updates acc updates
-      | Some(TacticJob.UpdateSolution(ev,TacticJob.Error err)) :: updates ->
-          List.iter DelegationManager.cancel_job job_ids;
-          CErrors.user_err ~hdr:"EM" err in
-    do_updates ready updates in
-  let results = wait [] events in
-  Declare.Proof.map pstate ~f:(fun p ->
-    let p,_,() = Proof.run_tactic (Global.env()) (assign_tac ~abstract results) p in
-    p)
-
-let () = ComTactic.set_par_implementation interp_par
-
-module TacticWorkerProcess = struct
-  type options = TacticWorker.options
-  let parse_options = TacticWorker.parse_options
-  let main ~st:initial_vernac_state options =
-    let send_back, job = TacticWorker.setup_plumbing options in
-    worker_solve_one_goal job ~send_back;
-    exit 0
-  let log = TacticWorker.log
 end
 

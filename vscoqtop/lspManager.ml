@@ -251,8 +251,7 @@ let coqtopInterpretToPoint ~id params : (string * Dm.DocumentManager.events) =
   let uri = params |> member "uri" |> to_string in
   let loc = params |> member "location" |> parse_loc in
   let st = Hashtbl.find states uri in
-  let progress_hook = progress_hook uri in
-  let (st, events) = Dm.DocumentManager.interpret_to_position ~progress_hook st loc in
+  let (st, events) = Dm.DocumentManager.interpret_to_position st loc in
   Hashtbl.replace states uri st;
   update_view uri st;
   (uri, events)
@@ -287,8 +286,7 @@ let coqtopInterpretToEnd ~id params : (string * Dm.DocumentManager.events) =
   let open Yojson.Basic.Util in
   let uri = params |> member "uri" |> to_string in
   let st = Hashtbl.find states uri in
-  let progress_hook = progress_hook uri in
-  let (st, events) = Dm.DocumentManager.interpret_to_end ~progress_hook st in
+  let (st, events) = Dm.DocumentManager.interpret_to_end st in
   Hashtbl.replace states uri st;
   update_view uri st;
   (uri,events)

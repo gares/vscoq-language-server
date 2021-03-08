@@ -1,5 +1,5 @@
 (library
  (name dm)
- (modules delegationManager documentManager document executionManager scheduler)
+ (modules delegationManager parTactic documentManager document executionManager scheduler)
  (flags -rectypes)
  (libraries coq.sysinit coq.vernac sel))

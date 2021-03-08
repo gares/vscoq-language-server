@@ -37,8 +37,6 @@ let inject_em_events events = List.map inject_em_event events
 
 type events = doc_management Sel.event list
 
-type progress_hook = unit -> unit
-
 let executed_ranges doc execution_state loc =
   let valid_ids = List.map (fun s -> s.id) @@ Document.sentences_before doc loc in
   let executed_ids = List.filter (ExecutionManager.is_executed execution_state) valid_ids in
@@ -78,10 +76,10 @@ let init (vernac_state,injections) uri document =
   let top = Coqargs.(dirpath_of_top (TopPhysical uri)) in
   Coqinit.start_library ~top injections;
   let vernac_state = Vernacstate.freeze_interp_state ~marshallable:false in
-  let execution_state = ExecutionManager.init_master vernac_state in
+  let execution_state = ExecutionManager.init vernac_state in
   { document; execution_state; observe_loc = None }, [inject_em_event ExecutionManager.local_feedback]
 
-let interpret_to_loc ?(progress_hook=fun doc -> ()) state loc : (state * events) =
+let interpret_to_loc state loc : (state * events) =
     let parsing_state_hook = ExecutionManager.get_parsing_state_after state.execution_state in
     let invalid_ids, document = validate_document ~parsing_state_hook state.document in
     let execution_state =
@@ -96,7 +94,7 @@ let interpret_to_loc ?(progress_hook=fun doc -> ()) state loc : (state * events)
     | None -> (* document is empty *) (state, [])
     | Some { id; stop; start } ->
       let progress_hook () = () in
-      let vernac_st, tasks = ExecutionManager.build_tasks_for ~progress_hook state.document state.execution_state id in
+      let vernac_st, tasks = ExecutionManager.build_tasks_for state.document state.execution_state id in
       if CList.is_empty tasks then
         let state = { state with observe_loc = Some loc } in
         (state, [])
@@ -151,9 +149,9 @@ let interpret_to_loc ~after ?(progress_hook=fun doc -> Lwt.return ()) state loc 
   make_progress state
 *)
 
-let interpret_to_position ?progress_hook state pos =
+let interpret_to_position state pos =
   let loc = Document.loc_of_position state.document pos in
-  interpret_to_loc ?progress_hook state loc
+  interpret_to_loc state loc
 
 let interpret_to_previous doc =
   match doc.observe_loc with
@@ -168,8 +166,8 @@ let interpret_to_next doc = (doc, []) (* TODO
     interpret_to_after_loc doc (stop+1)
     *)
 
-let interpret_to_end ?progress_hook state =
-  interpret_to_loc ?progress_hook state (Document.end_loc state.document)
+let interpret_to_end state =
+  interpret_to_loc state (Document.end_loc state.document)
 
 let reset vernac_st_injections uri state =
   fst (init vernac_st_injections uri state.document)
