@@ -2,4 +2,4 @@
  (name dm)
  (modules delegationManager parTactic documentManager document executionManager scheduler)
  (flags -rectypes)
- (libraries coq.sysinit coq.vernac sel))
+ (libraries coq-core.sysinit coq-core.vernac sel))
