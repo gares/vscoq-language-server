@@ -105,7 +105,7 @@ let advance ~ready_fds = function
       let rc, code = Unix.waitpid [Unix.WNOHANG] pid in
       if rc == 0 then x
       else Ready (k code)
-  | ReadInProgress(_, FNil x) -> assert false
+  | ReadInProgress(_, FNil _) -> assert false
   | ReadInProgress(fd,_) as x when not (List.mem fd ready_fds) -> x
   | ReadInProgress(fd, FCons(Line acc,rest)) -> begin try
       let buff = Bytes.make 1 '0' in

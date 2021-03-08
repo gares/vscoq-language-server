@@ -401,6 +401,7 @@ module ProofWorkerProcess = struct
   let main ~st:_ options =
     let send_back, job = ProofWorker.setup_plumbing options in
     worker_main job ~send_back
+  let log = ProofWorker.log
 end
 
 module TacticJob = struct
@@ -510,5 +511,6 @@ module TacticWorkerProcess = struct
     let send_back, job = TacticWorker.setup_plumbing options in
     worker_solve_one_goal job ~send_back;
     exit 0
+  let log = TacticWorker.log
 end
 

@@ -4,3 +4,17 @@
  (modules vscoqtop lspManager)
  (flags -rectypes -linkall)
  (libraries coq.sysinit coq.tactics yojson dm))
+
+(executable
+ (name vscoqtop_proof_worker)
+ (public_name vscoqtop_proof_worker.opt)
+ (modules vscoqtop_proof_worker)
+ (flags -rectypes -linkall)
+ (libraries coq.sysinit coq.tactics dm))
+
+(executable
+ (name vscoqtop_tactic_worker)
+ (public_name vscoqtop_tactic_worker.opt)
+ (modules vscoqtop_tactic_worker)
+ (flags -rectypes -linkall)
+ (libraries coq.sysinit coq.tactics dm))

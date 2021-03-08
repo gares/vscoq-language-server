@@ -28,7 +28,7 @@ type execution_status =
 let write_value { write_to; _ } x =
   let data = Marshal.to_bytes x [] in
   let datalength = Bytes.length data in
-  log @@ "[M] marshaling " ^ string_of_int datalength;
+  log @@ Printf.sprintf "marshaling %d bytes" datalength;
   let writeno = Unix.write write_to data 0 datalength in
   assert(writeno = datalength);
   flush_all ()
@@ -40,11 +40,11 @@ module type Job = sig
   val pool_size : int
   type update_request
   val appendFeedback : sentence_id -> (Feedback.level * Loc.t option * Pp.t) -> update_request
-
 end
 
+(* One typically created a job id way before the worker is spawned, so we
+   allocate a slot for the PID, but set it later *)
 type job_id = int option ref
-
 let mk_job_id () = ref None
 let cancel_job id =
   match !id with
@@ -58,12 +58,14 @@ let master_feedback_queue = Queue.create ()
 let install_feedback send =
   Feedback.add_feeder (fun fb ->
     match fb.Feedback.contents with
-    (* | Feedback.Message(Feedback.Info,_,_) -> () idtac sends an info *)
-    | Feedback.Message(Feedback.Debug,loc,m) -> Printf.eprintf "%s\n" @@ Pp.string_of_ppcmds m
+    | Feedback.Message(Feedback.Debug,loc,m) ->
+        (* This is crucial to avoid a busy loop: since a feedback triggers and
+           event, if SEL debug is on we loop, since processing the debug print
+           is also a feedback *)
+        Printf.eprintf "%s\n" @@ Pp.string_of_ppcmds m
     | Feedback.Message(lvl,loc,m) -> send (fb.Feedback.span_id,(lvl,loc,m))
     | Feedback.AddedAxiom -> send (fb.Feedback.span_id,(Feedback.Warning,None,Pp.str "axiom added"))
-      (* STM feedbacks are handled differently *)
-    | _ -> ())
+    | _ -> () (* STM feedbacks are handled differently *))
 
 let master_feeder = install_feedback (fun x -> Queue.push x master_feedback_queue)
 
@@ -72,31 +74,52 @@ let local_feedback : (sentence_id * (Feedback.level * Loc.t option * Pp.t)) Sel.
 
 module MakeWorker (Job : Job) = struct
 
+let debug_worker = CDebug.create ~name:("vscoq.Worker." ^ Job.name) ()
+
+let log_worker msg = debug_worker Pp.(fun () ->
+  str @@ Format.asprintf "     [%d] %s" (Unix.getpid ()) msg)
+
 let install_feedback_worker link =
   Feedback.del_feeder master_feeder;
   ignore(install_feedback (fun (id,fb) -> write_value link (Job.appendFeedback id fb)))
 
-let option_name = "-" ^ Str.global_replace (Str.regexp_string " ") "." Job.name ^ "_master_address"
-
+(* This is the lifetime of a delegation, there is one start event, many progress
+   evants, then one ending event. *)
 type delegation =
  | WorkerStart : job_id * 'job * ('job -> send_back:(Job.update_request -> unit) -> unit) * string -> delegation
  | WorkerProgress of { link : link; update_request : Job.update_request }
  | WorkerEnd of (int * Unix.process_status)
  | WorkerIOError of exn
+let pr_event = function
+  | WorkerEnd _ -> Pp.str "WorkerEnd"
+  | WorkerIOError _ -> Pp.str "WorkerIOError"
+  | WorkerProgress _ -> Pp.str "WorkerProgress"
+  | WorkerStart _ -> Pp.str "WorkerStart"
+
 type events = delegation Sel.event list
 
+type role = Master | Worker of link
+
+(* The pool is just a queue of tokens *)
+let pool = Queue.create ()
+let () = for _i = 0 to Job.pool_size do Queue.push () pool done
+
+(* In order to create a job we enqueue this event *)
+let worker_available ~jobs ~fork_action : delegation Sel.event =
+  Sel.on_queues jobs pool (fun (job_id, job) () ->
+    WorkerStart (job_id,job,fork_action,Job.binary_name))
+
+(* When a worker is spawn, we enqueue this event, since eventually it will die *)
+let wait_worker pid : delegation Sel.event =
+  Sel.on_death_of ~pid (fun reason -> WorkerEnd(pid,reason))
+
+(* When a worker is spawn, we enqueue this event, since eventually will make progress *)
 let worker_progress link : delegation Sel.event =
   Sel.on_ocaml_value link.read_from (function
     | Error e -> WorkerIOError e
     | Ok update_request -> WorkerProgress { link; update_request; })
 
-type role = Master | Worker of link
-
-let pool = Queue.create ()
-let () = for _i = 0 to Job.pool_size do Queue.push () pool done
-
-let wait_worker pid : delegation Sel.event =
-  Sel.on_death_of ~pid (fun reason -> WorkerEnd(pid,reason))
+(* ************ spawning *************************************************** *)
 
 let fork_worker : job_id -> (role * events) = fun job_id ->
   let open Unix in
@@ -104,7 +127,7 @@ let fork_worker : job_id -> (role * events) = fun job_id ->
   bind chan (ADDR_INET (Unix.inet_addr_loopback,0));
   listen chan 1;
   let address = getsockname chan in
-  log @@ "[M] Forking...";
+  log @@ "forking...";
   flush_all ();
   let null = openfile "/dev/null" [O_RDWR] 0o640 in
   let pid = fork () in
@@ -112,7 +135,7 @@ let fork_worker : job_id -> (role * events) = fun job_id ->
     (* Children process *)
     dup2 null stdin;
     close chan;
-    log @@ "[W] Borning...";
+    log_worker @@ "borning...";
     let chan = socket PF_INET SOCK_STREAM 0 in
     connect chan address;
     let read_from = chan in
@@ -125,12 +148,14 @@ let fork_worker : job_id -> (role * events) = fun job_id ->
     let () = job_id := Some pid in
     let worker, _worker_addr = accept chan  in (* TODO, error *) (* TODO: timeout *)
     close chan;
-    log @@ "[M] Forked pid " ^ string_of_int pid;
+    log @@ Printf.sprintf "forked pid %d" pid;
     let read_from = worker in
     let write_to = worker in
     let link = { write_to; read_from } in
     (Master, [worker_progress link; wait_worker pid])
 ;;
+
+let option_name = "-" ^ Str.global_replace (Str.regexp_string " ") "." Job.name ^ "_master_address"
 
 let create_process_worker procname job_id job =
   let open Unix in
@@ -146,80 +171,79 @@ let create_process_worker procname job_id job =
   let pid = create_process procname args null stdout stderr in
   close null;
   let () = job_id := Some pid in
-  log @@ "[M] Created worker pid waiting on port " ^ string_of_int port;
+  log @@ Printf.sprintf "created worker %d, waiting on port %d" pid port;
   let worker, _worker_addr = accept chan  in (* TODO, error *) (* TODO: timeout *)
   close chan;
   let read_from = worker in
   let write_to = worker in
   let link = { write_to; read_from } in
   install_feedback_worker link;
-  log @@ "[M] sending job";
+  log @@ "sending job";
   write_value link job;
   flush_all ();
-  log @@ "[M] sent";
+  log @@ "sent";
   [worker_progress link; wait_worker pid]
+
+(* **************** /spawning ********************************************** *)
 
 let handle_event = function
   | WorkerIOError e ->
-     log @@ "[M] Worker IO Error: " ^ Printexc.to_string e;
+     log @@ "worker IO Error: " ^ Printexc.to_string e;
      (None, [])
   | WorkerEnd (pid, _status) ->
-      log @@ Printf.sprintf "[M] Worker %d went on holidays" pid;
+      log @@ Printf.sprintf "worker %d went on holidays" pid;
       Queue.push () pool;
       (None,[])
   | WorkerProgress { link; update_request } ->
-      log "[M] WorkerProgress";
+      log "worker progress";
       (Some update_request, [worker_progress link])
   | WorkerStart (job_id,job,action,procname) ->
-    log "[M] WorkerStart";
+    log "worker starts";
     if Sys.os_type = "Unix" then
       let role, events = fork_worker job_id in
       match role with
       | Master ->
-        log "[M] Worker forked, returning events";
+        log "worker spawned (fork)";
         (None, events)
       | Worker link ->
         action job ~send_back:(write_value link);
         exit 0
     else
       let events = create_process_worker procname job_id job in
+      log "worker spawned (create_process)";
       (None, events)
 
-let pr_event = function
-  | WorkerEnd _ -> Pp.str "WorkerEnd"
-  | WorkerIOError _ -> Pp.str "WorkerIOError"
-  | WorkerProgress _ -> Pp.str "WorkerProgress"
-  | WorkerStart _ -> Pp.str "WorkerStart"
-
-let worker_available ~jobs ~fork_action : delegation Sel.event =
-  Sel.on_queues jobs pool (fun (job_id, job) () ->
-    WorkerStart (job_id,job,fork_action,Job.binary_name))
-
+(* the only option is the socket port *)
 type options = int
 
-let setup_plumbing port = try
-  let open Unix in
-  let chan = socket PF_INET SOCK_STREAM 0 in
-  let address = ADDR_INET (inet_addr_loopback,port) in
-  log @@ "[PW] connecting to " ^ string_of_int port;
-  connect chan address;
-  let read_from = chan in
-  let write_to = chan in
-  let link = { read_from; write_to } in
-  (* Unix.read_value does not exist, we use Sel *)
-  match Sel.wait [Sel.on_ocaml_value read_from (fun x -> x)] with
-  | [Ok (job : Job.t)], _ -> (write_value link, job)
-  | [Error exn], _ ->
-    log @@ "[PW] error receiving job: " ^ Printexc.to_string exn;
+let setup_plumbing port =
+  try
+    let open Unix in
+    let chan = socket PF_INET SOCK_STREAM 0 in
+    let address = ADDR_INET (inet_addr_loopback,port) in
+    log_worker @@ "connecting to " ^ string_of_int port;
+    connect chan address;
+    let read_from = chan in
+    let write_to = chan in
+    let link = { read_from; write_to } in
+    (* Unix.read_value does not exist, we use Sel *)
+    match Sel.wait [Sel.on_ocaml_value read_from (fun x -> x)] with
+    | [Ok (job : Job.t)], _ -> (write_value link, job)
+    | [Error exn], _ ->
+      log_worker @@ "error receiving job: " ^ Printexc.to_string exn;
+      exit 1
+    | _ -> assert false
+  with Unix.Unix_error(code,syscall,param) ->
+    log_worker @@ Printf.sprintf "error starting: %s: %s: %s" syscall param (Unix.error_message code);
     exit 1
-  | _ -> assert false
-with Unix.Unix_error(code,syscall,param) ->
-  log @@ "[PW] error starting: " ^ syscall ^ ": " ^ param ^ ": " ^ Unix.error_message code;
-  exit 1
 
 let parse_options extra_args =
   match extra_args with
-  [ o ; port ] when o = option_name -> int_of_string port, []
-  | _ -> assert false (* TODO: error *)
+  | [ o ; port ] when o = option_name -> int_of_string port, []
+  | _ ->
+    Printf.eprintf "unknown arguments: %s" (String.concat " " extra_args);
+    exit 2
+
+let log = log_worker
 
 end
