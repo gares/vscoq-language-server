@@ -47,7 +47,9 @@ type execution_status =
 
 type job_id
 val cancel_job : job_id -> unit
-val mk_job_id : unit -> job_id
+
+(** If the job fails to start, the error is reported on this sentence *)
+val mk_job_id : sentence_id -> job_id
 
 module MakeWorker (Job : Job) : sig
 

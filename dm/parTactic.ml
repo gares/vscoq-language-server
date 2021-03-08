@@ -78,6 +78,9 @@ let worker_solve_one_goal { TacticJob.state; ast; goalno; goal; name } ~send_bac
   with e when CErrors.noncritical e ->
     send_back (TacticJob.UpdateSolution (goal, TacticJob.Error Pp.(CErrors.print e ++ spc() ++ str "(for subgoal "++int goalno ++ str ")")))
 
+let feedback_id = ref Stateid.dummy
+let set_id_for_feedback id = feedback_id := id
+
 let interp_par ~pstate ~info ast ~abstract ~with_end_tac : Declare.Proof.t =
   let state = Vernacstate.freeze_interp_state ~marshallable:true in
   let queue = Queue.create () in
@@ -85,7 +88,7 @@ let interp_par ~pstate ~info ast ~abstract ~with_end_tac : Declare.Proof.t =
     Declare.Proof.fold pstate ~f:(fun p ->
      (Proof.data p).Proof.goals |> CList.map_i (fun goalno goal ->
        let job = { TacticJob.state; ast; goalno = goalno + 1; goal; name = Goal.uid goal} in
-       let job_id = DelegationManager.mk_job_id () in
+       let job_id = DelegationManager.mk_job_id !feedback_id in
        Queue.push (job_id,job) queue;
        TacticWorker.worker_available ~jobs:queue ~fork_action:worker_solve_one_goal, job_id
         ) 0) in

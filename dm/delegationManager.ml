@@ -34,6 +34,13 @@ let write_value { write_to; _ } x =
   log @@ Printf.sprintf "marshaling done";
   flush_all ()
 
+let abort_on_unix_error f x =
+  try
+    f x
+  with Unix.Unix_error(e,f,p) ->
+    Printf.eprintf "Error: %s: %s: %s\n%!" f p (Unix.error_message e);
+    exit 3
+
 module type Job = sig
   type t
   val name : string
@@ -44,10 +51,11 @@ module type Job = sig
 end
 
 (* One typically created a job id way before the worker is spawned, so we
-   allocate a slot for the PID, but set it later *)
-type job_id = int option ref
-let mk_job_id () = ref None
-let cancel_job id =
+   allocate a slot for the PID, but set it later. The sentence_id is used
+   for error reporting (e.g. fail to spawn) *)
+type job_id = sentence_id * int option ref
+let mk_job_id sid = sid, ref None
+let cancel_job (_,id) =
   match !id with
   | None -> ()
   | Some pid -> Unix.kill pid 9
@@ -111,7 +119,7 @@ let worker_available ~jobs ~fork_action : delegation Sel.event =
     WorkerStart (job_id,job,fork_action,Job.binary_name))
 
 (* When a worker is spawn, we enqueue this event, since eventually it will die *)
-let wait_worker pid : delegation Sel.event =
+let worker_ends pid : delegation Sel.event =
   Sel.on_death_of ~pid (fun reason -> WorkerEnd(pid,reason))
 
 (* When a worker is spawn, we enqueue this event, since eventually will make progress *)
@@ -122,68 +130,92 @@ let worker_progress link : delegation Sel.event =
 
 (* ************ spawning *************************************************** *)
 
-let fork_worker : job_id -> (role * events) = fun job_id ->
+let accept_timeout ?(timeout=2.0) sr =
+  let r, _, _ = Unix.select [sr] [] [] timeout in
+  if r = [] then None
+  else Some (Unix.accept sr)
+
+let fork_worker : job_id -> (role * events, string * events) result = fun (_, job_id) ->
   let open Unix in
-  let chan = socket PF_INET SOCK_STREAM 0 in
-  bind chan (ADDR_INET (Unix.inet_addr_loopback,0));
-  listen chan 1;
-  let address = getsockname chan in
-  log @@ "forking...";
-  flush_all ();
-  let null = openfile "/dev/null" [O_RDWR] 0o640 in
-  let pid = fork () in
-  if pid = 0 then begin
-    (* Children process *)
-    dup2 null stdin;
-    close chan;
-    log_worker @@ "borning...";
+  try
     let chan = socket PF_INET SOCK_STREAM 0 in
-    connect chan address;
-    let read_from = chan in
-    let write_to = chan in
-    let link = { write_to; read_from } in
-    install_feedback_worker link;
-    (Worker link, [])
-  end else
-    (* Parent process *)
-    let () = job_id := Some pid in
-    let worker, _worker_addr = accept chan  in (* TODO, error *) (* TODO: timeout *)
-    close chan;
-    log @@ Printf.sprintf "forked pid %d" pid;
-    let read_from = worker in
-    let write_to = worker in
-    let link = { write_to; read_from } in
-    (Master, [worker_progress link; wait_worker pid])
+    bind chan (ADDR_INET (Unix.inet_addr_loopback,0));
+    listen chan 1;
+    let address = getsockname chan in
+    log @@ "forking...";
+    flush_all ();
+    let null = openfile "/dev/null" [O_RDWR] 0o640 in
+    let pid = fork () in
+    if pid = 0 then begin
+        (* Children process *)
+        dup2 null stdin;
+        close chan;
+        log_worker @@ "borning...";
+        let chan = socket PF_INET SOCK_STREAM 0 in
+        connect chan address;
+        let read_from = chan in
+        let write_to = chan in
+        let link = { write_to; read_from } in
+        install_feedback_worker link;
+        Ok (Worker link, [])
+    end else
+      (* Parent process *)
+      let () = job_id := Some pid in
+      match accept_timeout chan with
+      | None ->
+          close chan;
+          log @@ Printf.sprintf "forked pid %d did not connect back" pid;
+          Unix.kill pid 9;
+          Error ("worker did not connect back", [worker_ends pid])
+      | Some (worker, _worker_addr) ->
+          close chan;
+          log @@ Printf.sprintf "forked pid %d called back" pid;
+          let read_from = worker in
+          let write_to = worker in
+          let link = { write_to; read_from } in
+          Ok (Master, [worker_progress link; worker_ends pid])
+  with Unix_error(e,f,p) ->
+    Error (f ^": "^ p^": " ^error_message e,[])
+
 ;;
 
 let option_name = "-" ^ Str.global_replace (Str.regexp_string " ") "." Job.name ^ "_master_address"
 
-let create_process_worker procname job_id job =
+let create_process_worker procname (_,job_id) job =
   let open Unix in
-  let chan = socket PF_INET SOCK_STREAM 0 in
-  bind chan (ADDR_INET (Unix.inet_addr_loopback,0));
-  listen chan 1;
-  let port = match getsockname chan with
-    | ADDR_INET(_,port) -> port
-    | _ -> assert false in
-  let null = openfile "/dev/null" [O_RDWR] 0o640 in
-  let extra_flags = if CDebug.get_flags () = "all" then [|"-debug"|] else [||] in
-  let args = Array.append  [|procname;option_name;string_of_int port|] extra_flags in
-  let pid = create_process procname args null stdout stderr in
-  close null;
-  let () = job_id := Some pid in
-  log @@ Printf.sprintf "created worker %d, waiting on port %d" pid port;
-  let worker, _worker_addr = accept chan  in (* TODO, error *) (* TODO: timeout *)
-  close chan;
-  let read_from = worker in
-  let write_to = worker in
-  let link = { write_to; read_from } in
-  install_feedback_worker link;
-  log @@ "sending job";
-  write_value link job;
-  flush_all ();
-  log @@ "sent";
-  [worker_progress link; wait_worker pid]
+  try
+    let chan = socket PF_INET SOCK_STREAM 0 in
+    bind chan (ADDR_INET (Unix.inet_addr_loopback,0));
+    listen chan 1;
+    let port = match getsockname chan with
+      | ADDR_INET(_,port) -> port
+      | _ -> assert false in
+    let null = openfile "/dev/null" [O_RDWR] 0o640 in
+    let extra_flags = if CDebug.get_flags () = "all" then [|"-debug"|] else [||] in
+    let args = Array.append  [|procname;option_name;string_of_int port|] extra_flags in
+    let pid = create_process procname args null stdout stderr in
+    close null;
+    let () = job_id := Some pid in
+    log @@ Printf.sprintf "created worker %d, waiting on port %d" pid port;
+    match accept_timeout chan with
+    | Some(worker, _worker_addr) ->
+        close chan;
+        let read_from = worker in
+        let write_to = worker in
+        let link = { write_to; read_from } in
+        install_feedback_worker link;
+        log @@ "sending job";
+        write_value link job;
+        flush_all ();
+        log @@ "sent";
+        Ok [worker_progress link; worker_ends pid]
+    | None ->
+        log @@ Printf.sprintf "child process %d did not connect back" pid;
+        Unix.kill pid 9;
+        Error ("worker did not connect back", [worker_ends pid])
+  with Unix_error(e,f,p) ->
+    Error (f ^": "^ p^": " ^error_message e,[])
+
 
 (* **************** /spawning ********************************************** *)
 
@@ -201,18 +233,25 @@ let handle_event = function
   | WorkerStart (job_id,job,action,procname) ->
     log "worker starts";
     if Sys.os_type = "Unix" then
-      let role, events = fork_worker job_id in
-      match role with
-      | Master ->
+      match fork_worker job_id with
+      | Ok(Master, events) ->
         log "worker spawned (fork)";
         (None, events)
-      | Worker link ->
-        action job ~send_back:(write_value link);
+      | Ok(Worker link, _) ->
+        action job ~send_back:(abort_on_unix_error write_value link);
         exit 0
+      | Error(msg, cleanup_events) ->
+        log @@ "worker did not spawn: " ^ msg;
+        (Some(Job.appendFeedback (fst job_id) (Feedback.Error,None,Pp.str msg)), cleanup_events)
     else
-      let events = create_process_worker procname job_id job in
-      log "worker spawned (create_process)";
-      (None, events)
+      match create_process_worker procname job_id job with
+      | Ok events ->
+          log "worker spawned (create_process)";
+          (None, events)
+      | Error(msg, cleanup_events) ->
+          log @@ "worker did not spawn: " ^ msg;
+          (Some(Job.appendFeedback (fst job_id) (Feedback.Error,None,Pp.str msg)), cleanup_events)
+
 
 (* the only option is the socket port *)
 type options = int

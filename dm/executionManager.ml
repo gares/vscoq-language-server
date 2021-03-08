@@ -90,6 +90,7 @@ let inject_proof_events st l =
 (* just a wrapper around vernac interp *)
 let interp_ast ~doc_id ~state_id vernac_st ast =
     Feedback.set_id_for_feedback doc_id state_id;
+    ParTactic.set_id_for_feedback state_id;
     Sys.(set_signal sigint (Signal_handle(fun _ -> raise Break)));
     let result =
       try Ok(Vernacinterp.interp ~st:vernac_st ast,[])
@@ -244,7 +245,7 @@ let execute ~doc_id st (vs, events, interrupted) task =
           begin match find_fulfilled_opt opener_id st.of_sentence with
           | Some (Success _) ->
             let job =  { ProofJob.tasks; initial_vernac_state = vs; doc_id; terminator_id; last_proof_step_id  = last_step_id } in
-            let job_id = DelegationManager.mk_job_id () in
+            let job_id = DelegationManager.mk_job_id terminator_id in
             (* The proof was successfully opened *)
             let last_vs, v, assign = interp_qed_delayed ~state_id:terminator_id vs in
             let complete_job status =
