@@ -1,3 +1,5 @@
+[![Actions Status](https://github.com/gares/vscoq-language-server/workflows/CI/badge.svg)](https://github.com/gares/vscoq-language-server/actions)
+
 # VSCoq Language Server
 
 This is a language server for Coq speaking LSP with a few additional messages
