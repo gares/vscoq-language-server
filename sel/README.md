@@ -105,7 +105,8 @@ injecting the events of the other component into the `NotForMe` event, so that
 dispatching can pass the ball correctly.
 
 SEL provides a few `Sel.on_*` APIs to create events on which one can wait.
-For example the death of a process, or an HTTP Content-Length encoded request.
+For example the death of a process, or an HTTP Content-Length encoded request,
+or some item in a Queue, or some marhaled OCaml value.
 All these APIs take a function to inject the actual data that comes with the
 event inside the appropriate ADT constructor representing the event ready to be
 handled.
@@ -114,7 +115,7 @@ Blocking calls are not forced to go trough SEL. You can read and write freely
 while handling an event. It is up to you to avoid long or blocking computations
 and to preserve some fairness. You can artificially split a computation in
 steps and pass the ball to the scheduler by creating event with `Sel.now`,
-which the schedule will find to be immediately ready *together* with all the
+which `Sel.wait` will find to be immediately ready *together* with all the
 other events that happen to be ready.
 
 Really? Yes, it is not intriguing intellectually speaking, but you can get some
