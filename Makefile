@@ -2,7 +2,7 @@ pwd := $(shell pwd)
 
 build:
 	ocamlfind query coq.sysinit || (git submodule update --init coq && dune build coq/theories/Init/Prelude.vo)
-	dune build vscoq-language-server.install
+	dune build vscoq-language-server.install sel.install
 
 _build/.vscode-extensions:
 	git submodule update --init vscoq && cd vscoq && make
