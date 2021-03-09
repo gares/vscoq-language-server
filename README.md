@@ -11,8 +11,9 @@ which are VSCoq specific (e.g. declaring a point of interest, printing goals).
 
 ### Status
 
-This software is being actively developed and should not be used yet by the
-the public
+This software is being actively developed and should not be used by the
+the public.
+
 ### Running
 
 The coq and vscoq submodules point to versions which are know to work.
