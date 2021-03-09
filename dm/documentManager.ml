@@ -23,6 +23,9 @@ type diagnostic = {
 }
 
 type state = {
+  uri : string;
+  init_vs : Vernacstate.t;
+  opts : Coqargs.injection_command list;
   document : document;
   execution_state : ExecutionManager.state;
   observe_loc : int option; (* TODO materialize observed loc and line-by-line execution status *)
@@ -77,14 +80,21 @@ let diagnostics st =
     List.map mk_error_diag exec_errors @
     List.map mk_diag feedback
 
-let init vernac_state ~opts:injections ~uri ~text =
+let init init_vs ~opts ~uri ~text =
   let document = Document.create_document text in
-  Vernacstate.unfreeze_interp_state vernac_state;
+  Vernacstate.unfreeze_interp_state init_vs;
   let top = Coqargs.(dirpath_of_top (TopPhysical uri)) in
-  Coqinit.start_library ~top injections;
-  let vernac_state = Vernacstate.freeze_interp_state ~marshallable:false in
-  let execution_state = ExecutionManager.init vernac_state in
-  { document; execution_state; observe_loc = None }, [inject_em_event ExecutionManager.local_feedback]
+  Coqinit.start_library ~top opts;
+  let execution_state = ExecutionManager.init (Vernacstate.freeze_interp_state ~marshallable:false) in
+  { uri; opts; init_vs; document; execution_state; observe_loc = None }, [inject_em_event ExecutionManager.local_feedback]
+
+let reset { uri; opts; init_vs; document } =
+  let document = Document.create_document (Document.text document) in
+  Vernacstate.unfreeze_interp_state init_vs;
+  let top = Coqargs.(dirpath_of_top (TopPhysical uri)) in
+  Coqinit.start_library ~top opts;
+  let execution_state = ExecutionManager.init (Vernacstate.freeze_interp_state ~marshallable:false) in
+  { uri; opts; init_vs; document; execution_state; observe_loc = None }
 
 let interpret_to_loc state loc : (state * events) =
     let parsing_state_hook = ExecutionManager.get_parsing_state_after state.execution_state in
@@ -93,7 +103,7 @@ let interpret_to_loc state loc : (state * events) =
       List.fold_left (fun st id ->
         ExecutionManager.invalidate (Document.schedule state.document) id st
         ) state.execution_state (Stateid.Set.elements invalid_ids) in
-    let state = { document; execution_state; observe_loc = Some loc } in
+    let state = { state with document; execution_state; observe_loc = Some loc } in
     (* We jump to the sentence before the position, otherwise jumping to the
     whitespace at the beginning of a sentence will observe the state after
     executing the sentence, which is unnatural. *)
@@ -174,9 +184,6 @@ let interpret_to_next doc = (doc, []) (* TODO
 
 let interpret_to_end state =
   interpret_to_loc state (Document.end_loc state.document)
-
-let reset (vernac_st, opts) uri state =
-  fst (init vernac_st ~opts ~uri ~text:(Document.text state.document))
 
 let retract state loc =
   let observe_loc = Option.map (fun loc' -> min loc loc') state.observe_loc in

@@ -270,7 +270,7 @@ let coqtopResetCoq ~id params =
   let open Yojson.Basic.Util in
   let uri = params |> member "uri" |> to_string in
   let st = Hashtbl.find states uri in
-  let st = Dm.DocumentManager.reset (get_init_state ()) uri st in
+  let st = Dm.DocumentManager.reset st in
   Hashtbl.replace states uri st;
   update_view uri st
 

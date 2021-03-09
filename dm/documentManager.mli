@@ -27,6 +27,8 @@ val init : Vernacstate.t -> opts:Coqargs.injection_command list -> uri:string ->
     [st] on which command line opts will be set. *)
 
 val apply_text_edits : state -> text_edit list -> state
+(** [apply_text_edits doc edits] updates the text of [doc] with [edits]. The
+    new text is not parsed or executed. *)
 
 val validate_document : state -> state
 (** [validate_document doc] reparses the text of [doc] and invalidates the
@@ -47,14 +49,15 @@ val interpret_to_next : state -> (state * events)
     and returns the resulting state. *)
 
 val interpret_to_end : state -> (state * events)
-(** [interpret_to_next doc] navigates to the last sentence in [doc]
+(** [interpret_to_end doc] navigates to the last sentence in [doc]
     and returns the resulting state. *)
 
-val reset : Vernacstate.t * Coqargs.injection_command list -> string -> state -> state
-val executed_ranges : state -> Range.t list * Range.t list
+val reset : state -> state
+(** resets Coq *)
 
-(** parsed_ranges [doc] returns the ranges corresponding to the sentences
-    that have been executed and remotely execute in [doc]. *)
+val executed_ranges : state -> Range.t list * Range.t list
+(** returns the ranges corresponding to the sentences
+    that have been executed and remotely executes *)
 
 type diagnostic = {
   range : Range.t;
