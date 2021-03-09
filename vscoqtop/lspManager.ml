@@ -35,13 +35,13 @@ let log ~verbosity:_ msg = lsp_debug Pp.(fun () ->
 
 type lsp_event = Request of Yojson.Basic.t option
 
-type top =
+type event =
  | LspManagerEvent of lsp_event
- | DocumentManagerEvent of string * Dm.DocumentManager.doc_management
+ | DocumentManagerEvent of string * Dm.DocumentManager.event
 
-type events = top Sel.event list
+type events = event Sel.event list
 
-let lsp : top Sel.event =
+let lsp : event Sel.event =
   Sel.on_httpcle Unix.stdin (function
     | Ok buff ->
       begin
@@ -287,7 +287,7 @@ let coqtopInterpretToEnd ~id params : (string * Dm.DocumentManager.events) =
   update_view uri st;
   (uri,events)
 
-let inject_dm_event uri x : top Sel.event =
+let inject_dm_event uri x : event Sel.event =
   Sel.map (fun e -> DocumentManagerEvent(uri,e)) x
 
 let inject_dm_events (uri,l) =

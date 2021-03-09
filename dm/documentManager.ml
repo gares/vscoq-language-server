@@ -28,14 +28,20 @@ type state = {
   observe_loc : int option; (* TODO materialize observed loc and line-by-line execution status *)
 }
 
-type doc_management =
-  | ExecuteToLoc of int * Vernacstate.t * ExecutionManager.prepared_task list
-  | ExecutionManagerEvent of ExecutionManager.execution
+type event =
+  | ExecuteToLoc of { (* we split the computation to help interruptibility *)
+      loc : int; (* where we go *)
+      vst_for_next_todo : Vernacstate.t; (* the state to be used for the next
+        todo, it is not necessarily the state of the last sentence, since it
+        may have failed and this is a surrogate used for error resiliancy *)
+      todo : ExecutionManager.prepared_task list;
+    }
+  | ExecutionManagerEvent of ExecutionManager.event
 
 let inject_em_event x = Sel.map (fun e -> ExecutionManagerEvent e) x
 let inject_em_events events = List.map inject_em_event events
 
-type events = doc_management Sel.event list
+type events = event Sel.event list
 
 let executed_ranges doc execution_state loc =
   let valid_ids = List.map (fun s -> s.id) @@ Document.sentences_before doc loc in
@@ -93,13 +99,13 @@ let interpret_to_loc state loc : (state * events) =
     match find_sentence_before state.document loc with
     | None -> (* document is empty *) (state, [])
     | Some { id; stop; start } ->
-      let vernac_st, tasks = ExecutionManager.build_tasks_for state.document state.execution_state id in
-      if CList.is_empty tasks then
+      let vst_for_next_todo, todo = ExecutionManager.build_tasks_for state.document state.execution_state id in
+      if CList.is_empty todo then
         let state = { state with observe_loc = Some loc } in
         (state, [])
       else
         if Document.parsed_loc state.document < loc && Document.more_to_parse state.document then
-          (state, [Sel.now (ExecuteToLoc (loc, vernac_st, tasks))])
+          (state, [Sel.now (ExecuteToLoc {loc; vst_for_next_todo; todo})])
         else
       (*
       let executed_loc = Some stop in
@@ -108,7 +114,7 @@ let interpret_to_loc state loc : (state * events) =
         | Some pv -> let pos = Document.position_of_loc state.document stop in Some (pv, pos)
       in
       *)
-        (state, [Sel.now (ExecuteToLoc (loc, vernac_st, tasks))])
+        (state, [Sel.now (ExecuteToLoc {loc; vst_for_next_todo; todo})])
 
 (*
 let interpret_to_loc ~after ?(progress_hook=fun doc -> Lwt.return ()) state loc : (state * proof_data * events) Lwt.t =
@@ -187,21 +193,21 @@ let validate_document state =
 
 let handle_event ev st =
   match ev with
-  | ExecuteToLoc (loc, vernac_st, []) ->
-    log "[DM] event: Execute (no tasks)";
+  | ExecuteToLoc { loc; todo = [] } -> (* the vst_for_next_todo is also in st.execution_state *)
+    log "Execute (no tasks)";
     (* We update the state to trigger a publication of diagnostics *)
     let st, events = interpret_to_loc st loc in
     (Some st, events)
-  | ExecuteToLoc (loc, vernac_st, task :: tasks) ->
-    log "[DM] event: Execute (more tasks)";
+  | ExecuteToLoc { loc; vst_for_next_todo; todo = task :: todo } ->
+    log "Execute (more tasks)";
     let doc_id = Document.id_of_doc st.document in
-    let (execution_state,vernac_st,events,interrupted) =
-      ExecutionManager.execute ~doc_id st.execution_state (vernac_st, [], false) task in
+    let (execution_state,vst_for_next_todo,events,interrupted) =
+      ExecutionManager.execute ~doc_id st.execution_state (vst_for_next_todo, [], false) task in
     (* We do not update the state here because we may have received feedback while
        executing *)
-    (Some {st with execution_state}, inject_em_events events @ [Sel.now (ExecuteToLoc(loc, vernac_st,tasks))])
+    (Some {st with execution_state}, inject_em_events events @ [Sel.now (ExecuteToLoc{loc; vst_for_next_todo; todo })])
   | ExecutionManagerEvent ev ->
-    let execution_state_update,events = ExecutionManager.handle_event ev st.execution_state in
+    let execution_state_update, events = ExecutionManager.handle_event ev st.execution_state in
     (Option.map (fun execution_state -> {st with execution_state}) execution_state_update, inject_em_events events)
 
 let get_current_proof st =

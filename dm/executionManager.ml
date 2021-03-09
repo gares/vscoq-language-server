@@ -74,10 +74,10 @@ end
 module ProofWorker = DelegationManager.MakeWorker(ProofJob)
 
 
-type execution =
+type event =
   | LocalFeedback of sentence_id * (Feedback.level * Loc.t option * Pp.t)
   | ProofWorkerEvent of ProofWorker.delegation
-type events = execution Sel.event list
+type events = event Sel.event list
 let pr_event = function
   | LocalFeedback _ -> Pp.str "LocalFeedback"
   | ProofWorkerEvent event -> ProofWorker.pr_event event

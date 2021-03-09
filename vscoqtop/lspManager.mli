@@ -7,11 +7,13 @@
 (*         *     GNU Lesser General Public License Version 2.1          *)
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
-type top
-type events = top Sel.event list
 
-val lsp : top Sel.event
-val handle_event : top -> events
-val pr_event : top -> Pp.t
+type event
+type events = event Sel.event list
+
+val lsp : event Sel.event
+
+val handle_event : event -> events
+val pr_event : event -> Pp.t
 
 val init : Coqargs.injection_command list -> unit

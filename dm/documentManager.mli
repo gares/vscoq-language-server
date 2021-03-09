@@ -16,14 +16,12 @@ open Document
 
 type state
 
-type doc_management
-type events = doc_management Sel.event list
+type event
+type events = event Sel.event list
 
 val init : Vernacstate.t * Coqargs.injection_command list -> string -> document -> state * events
 (** [init st doc] initializes the document manager with initial vernac state
     [st] and document [doc]. *)
-
-type proof_data = (Proof.data * Position.t) option
 
 val apply_text_edits : state -> text_edit list -> state
 
@@ -65,8 +63,11 @@ val diagnostics : state -> diagnostic list
 (** diagnostics [doc] returns the diagnostics corresponding to the sentences
     that have been executed in [doc]. *)
 
+type proof_data = (Proof.data * Position.t) option
+
 val get_current_proof : state -> proof_data
 
-val handle_event : doc_management -> state -> (state option * events)
+val handle_event : event -> state -> (state option * events)
+(** handles events and returns a new state if it was updated *)
 
-val pr_event : doc_management -> Pp.t
+val pr_event : event -> Pp.t

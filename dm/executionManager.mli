@@ -8,8 +8,8 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
-(** The execution manager is in charge of the actual execution of tasks (as
-    defined by the scheduler), caching execution states and invalidating
+(** The event manager is in charge of the actual event of tasks (as
+    defined by the scheduler), caching event states and invalidating
     them. It can delegate to worker processes via DelegationManager *)
 
 open Scheduler
@@ -32,13 +32,12 @@ val get_parsing_state_after : state -> sentence_id -> Vernacstate.Parser.t optio
 val get_proofview : state -> sentence_id -> Proof.data option
 
 (** Events for the main loop *)
-type execution
-type events = execution Sel.event list
-val pr_event : execution -> Pp.t
-val local_feedback : execution Sel.event
-val handle_event : execution -> state -> (state option * events)
+type event type events = event Sel.event list
+val pr_event : event -> Pp.t
+val local_feedback : event Sel.event
+val handle_event : event -> state -> (state option * events)
 
-(** Execution happens in two steps. In particular the execution one takes only
+(** Execution happens in two steps. In particular the event one takes only
     one task at a time to ease checking for interruption *)
 type prepared_task
 val build_tasks_for : document -> state -> sentence_id -> Vernacstate.t * prepared_task list
