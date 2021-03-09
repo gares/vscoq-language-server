@@ -623,3 +623,5 @@ let range_of_coq_loc doc loc = RawDoc.range_of_loc doc.raw_doc loc
 let parse_errors doc = ParsedDoc.parse_errors doc.raw_doc doc.parsed_doc
 let sentences doc = ParsedDoc.sentences doc.parsed_doc
 let sentences_before doc loc = ParsedDoc.sentences_before doc.parsed_doc loc
+
+let text doc = RawDoc.text doc.raw_doc

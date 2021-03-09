@@ -1,5 +1,20 @@
 (library
  (name dm)
+ (private_modules scheduler delegationManager document)
  (modules delegationManager parTactic documentManager document executionManager scheduler)
  (flags -rectypes)
  (libraries coq-core.sysinit coq-core.vernac sel))
+
+(executable
+ (name vscoqtop_proof_worker)
+ (public_name vscoqtop_proof_worker.opt)
+ (modules vscoqtop_proof_worker)
+ (flags -rectypes -linkall)
+ (libraries coq-core.sysinit coq-core.tactics dm))
+
+(executable
+ (name vscoqtop_tactic_worker)
+ (public_name vscoqtop_tactic_worker.opt)
+ (modules vscoqtop_tactic_worker)
+ (flags -rectypes -linkall)
+ (libraries coq-core.sysinit coq-core.tactics dm))

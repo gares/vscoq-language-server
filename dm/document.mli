@@ -94,6 +94,9 @@ val end_loc : document -> int
 
 val schedule : document -> Scheduler.schedule
 
+val text : document -> string
+(** the whole text *)
+
 (* Fishy APIs *)
 val range_of_exec_id : document -> Stateid.t -> Range.t
 val range_of_coq_loc : document -> Loc.t -> Range.t

@@ -7,7 +7,10 @@
 (*         *     GNU Lesser General Public License Version 2.1          *)
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
-open Document
+
+module Range : module type of Document.Range
+module Position : module type of Document.Position
+type text_edit = Range.t * string
 
 (** The document manager holds the view that Coq has of the currently open
     states. It makes it easy for IDEs to handle text edits, navigate
@@ -19,9 +22,9 @@ type state
 type event
 type events = event Sel.event list
 
-val init : Vernacstate.t * Coqargs.injection_command list -> string -> document -> state * events
-(** [init st doc] initializes the document manager with initial vernac state
-    [st] and document [doc]. *)
+val init : Vernacstate.t * Coqargs.injection_command list -> string -> string -> state * events
+(** [init st text] initializes the document manager with initial vernac state
+    [st] and document [test]. *)
 
 val apply_text_edits : state -> text_edit list -> state
 
@@ -71,3 +74,4 @@ val handle_event : event -> state -> (state option * events)
 (** handles events and returns a new state if it was updated *)
 
 val pr_event : event -> Pp.t
+

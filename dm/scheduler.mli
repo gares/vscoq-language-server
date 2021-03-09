@@ -19,6 +19,7 @@ val initial_state : state
 
 type sentence_id = Stateid.t
 type ast = Vernacexpr.vernac_control
+type sentence_id_set = Stateid.Set.t
 
 type vernac_classification =
   ParsingEffect | StateEffect
@@ -48,7 +49,7 @@ val schedule_sentence : sentence_id * ast option -> state -> schedule -> state *
 val task_for_sentence : schedule -> sentence_id -> sentence_id option * task
 (** Finds the task to be performed and the state on which the task should run *)
 
-val dependents : schedule -> sentence_id -> Stateid.Set.t
+val dependents : schedule -> sentence_id -> sentence_id_set
 (** Computes what should be invalidated *)
 
 val string_of_schedule : schedule -> string

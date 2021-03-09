@@ -11,8 +11,6 @@
 (** This toplevel implements an LSP-based server language for VsCode,
     used by the VsCoq extension. *)
 
-open Dm.Document
-open Dm.DocumentManager
 open Printer
 
 module CompactedDecl = Context.Compacted.Declaration
@@ -24,7 +22,6 @@ let get_init_state () =
   | None -> CErrors.anomaly Pp.(str "Initial state not available")
 
 let states : (string, Dm.DocumentManager.state) Hashtbl.t = Hashtbl.create 39
-let doc_ids : (int, string) Hashtbl.t = Hashtbl.create 39
 
 let lsp_debug = CDebug.create ~name:"vscoq.lspManager" ()
 
@@ -77,15 +74,15 @@ let parse_loc json =
   let open Yojson.Basic.Util in
   let line = json |> member "line" |> to_int in
   let char = json |> member "character" |> to_int in
-  Position.{ line ; char }
+  Dm.DocumentManager.Position.{ line ; char }
 
-let mk_loc Position.{ line; char } =
+let mk_loc Dm.DocumentManager.Position.{ line; char } =
   `Assoc [
     "line", `Int line;
     "character", `Int char;
   ]
 
-let mk_range Range.{ start; stop } =
+let mk_range Dm.DocumentManager.Range.{ start; stop } =
   `Assoc [
     "start", mk_loc start;
     "end", mk_loc stop;
@@ -103,6 +100,7 @@ let publish_diagnostics uri doc =
     )
   in
   let mk_diagnostic d =
+    let open Dm.DocumentManager in
     `Assoc [
       "range", mk_range d.range;
       "severity", mk_severity d.severity;
@@ -202,10 +200,7 @@ let textDocumentDidOpen params =
   let textDocument = params |> member "textDocument" in
   let uri = textDocument |> member "uri" |> to_string in
   let text = textDocument |> member "text" |> to_string in
-  let doc = Dm.Document.create_document text in
-  let id = Dm.Document.id_of_doc doc in
-  Hashtbl.add doc_ids id uri;
-  let st, events = Dm.DocumentManager.init (get_init_state ()) uri doc in
+  let st, events = Dm.DocumentManager.init (get_init_state ()) uri text in
   let st = Dm.DocumentManager.validate_document st in
   Hashtbl.add states uri st;
   update_view uri st;
@@ -221,7 +216,7 @@ let textDocumentDidChange params =
     let range = edit |> member "range" in
     let start = range |> member "start" |> parse_loc in
     let stop = range |> member "end" |> parse_loc in
-    Range.{ start; stop }, text
+    Dm.DocumentManager.Range.{ start; stop }, text
   in
   let textEdits = List.map read_edit contentChanges in
   let st = Hashtbl.find states uri in

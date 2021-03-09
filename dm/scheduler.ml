@@ -10,6 +10,7 @@
 
 type sentence_id = Stateid.t
 type ast = Vernacexpr.vernac_control
+type sentence_id_set = Stateid.Set.t
 
 let debug_scheduler = CDebug.create ~name:"vscoq.scheduler" ()
 
