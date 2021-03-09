@@ -7,36 +7,31 @@
 (*         *     GNU Lesser General Public License Version 2.1          *)
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
-open Scheduler
+
+type sentence_id = Scheduler.sentence_id
+type sentence_id_set = Stateid.Set.t
+type ast = Scheduler.ast
 
 let debug_document = CDebug.create ~name:"vscoq.document" ()
 
 let log msg = debug_document Pp.(fun () ->
   str @@ Format.asprintf "         [%d] %s" (Unix.getpid ()) msg)
 
-module Position = struct
+module RawPosition = struct
 
-type t =
-  { line : int;
-    char : int;
-  }
+  type t = { line : int; char : int; }
 
-let compare pos1 pos2 =
-  match Int.compare pos1.line pos2.line with
-  | 0 -> Int.compare pos1.char pos2.char
-  | x -> x
+  let compare pos1 pos2 =
+    match Int.compare pos1.line pos2.line with
+    | 0 -> Int.compare pos1.char pos2.char
+    | x -> x
 
-let to_string pos = Format.sprintf "(%i,%i)" pos.line pos.char
+  let to_string pos = Format.sprintf "(%i,%i)" pos.line pos.char
 
 end
 
 module Range = struct
-
-type t =
-  { start : Position.t;
-    stop : Position.t;
-  }
-
+  type t = { start : RawPosition.t; stop : RawPosition.t; }
 end
 
 type text_edit = Range.t * string
@@ -46,14 +41,14 @@ let top_edit_position edits =
   | [] -> assert false
   | (Range.{ start },_) :: edits ->
     List.fold_left (fun min (Range.{ start },_) ->
-    if Position.compare start min < 0 then start else min) start edits
+    if RawPosition.compare start min < 0 then start else min) start edits
 
 let bottom_edit_position edits =
   match edits with
   | [] -> assert false
   | (Range.{ stop },_) :: edits ->
     List.fold_left (fun max (Range.{ stop },_) ->
-    if Position.compare stop max > 0 then stop else max) stop edits
+    if RawPosition.compare stop max > 0 then stop else max) stop edits
 
 module RawDoc : sig
 
@@ -62,8 +57,8 @@ module RawDoc : sig
   val create : string -> t
   val text : t -> string
 
-  val position_of_loc : t -> int -> Position.t
-  val loc_of_position : t -> Position.t -> int
+  val position_of_loc : t -> int -> RawPosition.t
+  val loc_of_position : t -> RawPosition.t -> int
   val end_loc : t -> int
 
   val range_of_loc : t -> Loc.t -> Range.t
@@ -89,9 +84,9 @@ end = struct
   let position_of_loc raw loc =
     let i = ref 0 in
     while (!i < Array.length raw.lines && raw.lines.(!i) <= loc) do incr(i) done;
-    Position.{ line = !i - 1; char = loc - raw.lines.(!i - 1) }
+    RawPosition.{ line = !i - 1; char = loc - raw.lines.(!i - 1) }
 
-  let loc_of_position raw Position.{ line; char } =
+  let loc_of_position raw RawPosition.{ line; char } =
     raw.lines.(line) + char
 
   let end_loc raw =
@@ -120,19 +115,11 @@ end
 
 module LM = Map.Make (Int)
 
-type sentence_id = Stateid.t
-
 module SM = Map.Make (Stateid)
 
 type parsed_ast =
   | ValidAst of ast * Tok.t list
   | ParseError of string Loc.located
-
-(*
-let classify_parsed_vernac = function
-  | ValidAst (ast,_tokens) -> Vernac_classifier.classify_vernac ast
-  | ParseError _ -> StateEffect (* Optimistic error recovery *)
-  *)
 
 let string_of_parsed_ast = function
   | ValidAst (ast,tokens) -> (Pp.string_of_ppcmds @@ Ppvernac.pr_vernac ast) ^ " [" ^ String.concat "--" (List.map (Tok.extract_string false) tokens) ^ "]"
@@ -176,15 +163,9 @@ module ParsedDoc : sig
 
   val to_string : t -> string
 
-  val schedule : t -> schedule
+  val schedule : t -> Scheduler.schedule
 
   val parsed_ranges : RawDoc.t -> t -> Range.t list
-  (*
-  val executed_ranges : RawDoc.t -> t -> ExecutionManager.state -> int -> range list
-  *)
-(*
-  val make_diagnostic : RawDoc.t -> t -> sentence_id -> Loc.t option -> string -> severity -> diagnostic
-  *)
 
   val parse_errors : RawDoc.t -> t -> (Stateid.t * Loc.t option * string) list
 
@@ -230,7 +211,7 @@ end = struct
   let empty = {
     sentences_by_id = SM.empty;
     sentences_by_end = LM.empty;
-    schedule = initial_schedule;
+    schedule = Scheduler.initial_schedule;
   }
 
   let to_string parsed =
@@ -332,7 +313,7 @@ end = struct
       | ParseError _ ->
         Some (stop, parsing_state, scheduler_state_after)
       | ValidAst (ast, _tokens) ->
-        begin match classify_vernac ast with
+        begin match Scheduler.classify_vernac ast with
         | ParsingEffect ->
           begin match parsing_state_hook id with
           | None -> None
@@ -506,7 +487,7 @@ let rec parse_more parsing_state stream raw parsed =
       let tokens = stream_tok 0 [] lex begin_line begin_char in
       let sentence = { ast = ValidAst(ast,tokens); start; stop; parsing_state } in
       let parsed = sentence :: parsed in
-      match classify_vernac ast with
+      match Scheduler.classify_vernac ast with
       | ParsingEffect -> (* parsing more would require execution *)
         List.rev parsed, true
       | StateEffect ->
@@ -583,7 +564,12 @@ let validate_document ~parsing_state_hook ({ parsed_loc; raw_doc; parsed_doc } a
     let parsed_loc = ParsedDoc.pos_at_end parsed_doc in
     invalid_ids, { document with parsed_doc; more_to_parse; parsed_loc }
 
-let create_document ~id text =
+let fresh_doc_id =
+  let doc_id = ref (-1) in
+  fun () -> incr doc_id; !doc_id
+
+let create_document text =
+  let id = fresh_doc_id () in
   let raw_doc = RawDoc.create text in
     { id;
       parsed_loc = -1;
@@ -624,12 +610,16 @@ let more_to_parse doc = doc.more_to_parse
 let parsed_loc doc = doc.parsed_loc
 let schedule doc = ParsedDoc.schedule doc.parsed_doc
 
-let position_of_loc doc = RawDoc.position_of_loc doc.raw_doc
-let loc_of_position doc = RawDoc.loc_of_position doc.raw_doc
+module Position = struct
+include RawPosition
+let of_loc doc = RawDoc.position_of_loc doc.raw_doc
+let to_loc doc = RawDoc.loc_of_position doc.raw_doc
+end
+
 let end_loc doc = RawDoc.end_loc doc.raw_doc
 
-let range_of_id doc id = ParsedDoc.range_of_id doc.raw_doc doc.parsed_doc id
-let range_of_loc doc loc = RawDoc.range_of_loc doc.raw_doc loc
+let range_of_exec_id doc id = ParsedDoc.range_of_id doc.raw_doc doc.parsed_doc id
+let range_of_coq_loc doc loc = RawDoc.range_of_loc doc.raw_doc loc
 let parse_errors doc = ParsedDoc.parse_errors doc.raw_doc doc.parsed_doc
 let sentences doc = ParsedDoc.sentences doc.parsed_doc
 let sentences_before doc loc = ParsedDoc.sentences_before doc.parsed_doc loc

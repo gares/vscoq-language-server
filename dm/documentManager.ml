@@ -41,8 +41,8 @@ let executed_ranges doc execution_state loc =
   let valid_ids = List.map (fun s -> s.id) @@ Document.sentences_before doc loc in
   let executed_ids = List.filter (ExecutionManager.is_executed execution_state) valid_ids in
   let remotely_executed_ids = List.filter (ExecutionManager.is_remotely_executed execution_state) valid_ids in
-  List.map (Document.range_of_id doc) executed_ids,
-  List.map (Document.range_of_id doc) remotely_executed_ids
+  List.map (Document.range_of_exec_id doc) executed_ids,
+  List.map (Document.range_of_exec_id doc) remotely_executed_ids
 
 let executed_ranges st =
   match st.observe_loc with
@@ -53,9 +53,9 @@ let executed_ranges st =
 let make_diagnostic doc id oloc message severity =
   let range =
     match oloc with
-    | None -> range_of_id doc id
+    | None -> range_of_exec_id doc id
     | Some loc ->
-      Document.range_of_loc doc loc
+      Document.range_of_coq_loc doc loc
   in
   { range; message; severity }
 
@@ -93,7 +93,6 @@ let interpret_to_loc state loc : (state * events) =
     match find_sentence_before state.document loc with
     | None -> (* document is empty *) (state, [])
     | Some { id; stop; start } ->
-      let progress_hook () = () in
       let vernac_st, tasks = ExecutionManager.build_tasks_for state.document state.execution_state id in
       if CList.is_empty tasks then
         let state = { state with observe_loc = Some loc } in
@@ -150,7 +149,7 @@ let interpret_to_loc ~after ?(progress_hook=fun doc -> Lwt.return ()) state loc 
 *)
 
 let interpret_to_position state pos =
-  let loc = Document.loc_of_position state.document pos in
+  let loc = Document.Position.to_loc state.document pos in
   interpret_to_loc state loc
 
 let interpret_to_previous doc =
@@ -209,7 +208,7 @@ let get_current_proof st =
   match Option.bind st.observe_loc (Document.find_sentence_before st.document) with
   | None -> None
   | Some sentence ->
-    let pos = Document.position_of_loc st.document sentence.stop in
+    let pos = Document.Position.of_loc st.document sentence.stop in
     match ExecutionManager.get_proofview st.execution_state sentence.id with
     | None -> None
     | Some pv -> Some (pv, pos)

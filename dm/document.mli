@@ -7,40 +7,50 @@
 (*         *     GNU Lesser General Public License Version 2.1          *)
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
-open Scheduler
 
 (** This file defines operations on the content of a document (text, parsing
     of sentences, scheduling). *)
 
-type document
-
-val id_of_doc : document -> int
-
+type sentence_id = Stateid.t
+type sentence_id_set = Stateid.Set.t
+type ast = Vernacexpr.vernac_control
 type parsing_state_hook = sentence_id -> Vernacstate.Parser.t option
 
-val create_document : id:int -> string -> document
-(** [create_document text] creates a fresh document with content defined by
-    [text]. *)
+(** The document gathers the text, which is partially validated (parsed into
+    sentences *)
+type document
 
 module Position : sig
 
-type t =
-  { line : int;
-    char : int
-  }
+type t = { line : int; char : int }
 
 val compare : t -> t -> int
+
+val of_loc : document -> int -> t
+val to_loc : document -> t -> int
 
 end
 
 module Range : sig
-
-type t =
-  { start : Position.t;
-    stop : Position.t;
-  }
-
+  type t = { start : Position.t; stop : Position.t; }
 end
+
+
+val create_document : string -> document
+(** [create_document text] creates a fresh document with content defined by
+    [text]. *)
+
+val id_of_doc : document -> int
+(** Unique id of the document *)
+
+val validate_document : parsing_state_hook:parsing_state_hook ->
+  document -> sentence_id_set * document
+(** [validate_document doc] parses the document without forcing any execution
+    and returns the set of invalidated sentences *)
+
+val parse_errors : document -> (sentence_id * Loc.t option * string) list
+(** [parse_errors doc] returns the list of sentences which failed to parse
+    (see validate_document) together with their error message *)
 
 type text_edit = Range.t * string
 
@@ -48,14 +58,8 @@ val apply_text_edits : document -> text_edit list -> document
 (** [apply_text_edits doc edits] updates the text of [doc] with [edits]. The
     new text is not parsed or executed. *)
 
-val parsed_ranges : document -> Range.t list
-(** parsed_ranges [doc] returns the ranges corresponding to the sentences
-    that have been parsed in [doc]. *)
-
-val validate_document : parsing_state_hook:parsing_state_hook -> document -> Stateid.Set.t * document
-
 type parsed_ast =
-  | ValidAst of ast * Tok.t list
+  | ValidAst of ast * Tok.t list (* the list of tokens generating ast, a sort of fingerprint to compare ASTs  *)
   | ParseError of string Loc.located
 
 type sentence = {
@@ -68,21 +72,29 @@ type sentence = {
   id : sentence_id;
 }
 
-(* TODO refine this API *)
-val get_sentence : document -> sentence_id -> sentence option
-val find_sentence : document -> int -> sentence option
-val find_sentence_before : document -> int -> sentence option
-val more_to_parse : document -> bool
-val parsed_loc : document -> int
-val schedule : document -> schedule
+val sentences : document -> sentence list
 
-val position_of_loc : document -> int -> Position.t
-val loc_of_position : document -> Position.t -> int
+val get_sentence : document -> sentence_id -> sentence option
+val sentences_before : document -> int -> sentence list
+
+val find_sentence : document -> int -> sentence option
+(** [find_sentence doc loc] finds the sentence containing the loc *)
+
+val find_sentence_before : document -> int -> sentence option
+(** [find_sentence_before doc loc] finds the last sentence before the loc *)
+
+val more_to_parse : document -> bool
+(** [more_to_parse doc] is false if the entire text was parsed *)
+
+val parsed_loc : document -> int
+(** the last loc of the document which was parsed *)
 
 val end_loc : document -> int
+(** the last loc of the document *)
 
-val range_of_id : document -> Stateid.t -> Range.t
-val range_of_loc : document -> Loc.t -> Range.t
-val parse_errors : document -> (Stateid.t * Loc.t option * string) list
-val sentences : document -> sentence list
-val sentences_before : document -> int -> sentence list
+val schedule : document -> Scheduler.schedule
+
+(* Fishy APIs *)
+val range_of_exec_id : document -> Stateid.t -> Range.t
+val range_of_coq_loc : document -> Loc.t -> Range.t
+

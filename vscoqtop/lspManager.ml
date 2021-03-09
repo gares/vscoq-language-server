@@ -26,10 +26,6 @@ let get_init_state () =
 let states : (string, Dm.DocumentManager.state) Hashtbl.t = Hashtbl.create 39
 let doc_ids : (int, string) Hashtbl.t = Hashtbl.create 39
 
-let fresh_doc_id =
-  let doc_id = ref (-1) in
-  fun () -> incr doc_id; !doc_id
-
 let lsp_debug = CDebug.create ~name:"vscoq.lspManager" ()
 
 let log ~verbosity:_ msg = lsp_debug Pp.(fun () ->
@@ -206,8 +202,8 @@ let textDocumentDidOpen params =
   let textDocument = params |> member "textDocument" in
   let uri = textDocument |> member "uri" |> to_string in
   let text = textDocument |> member "text" |> to_string in
-  let id = fresh_doc_id () in
-  let doc = Dm.Document.create_document ~id text in
+  let doc = Dm.Document.create_document text in
+  let id = Dm.Document.id_of_doc doc in
   Hashtbl.add doc_ids id uri;
   let st, events = Dm.DocumentManager.init (get_init_state ()) uri doc in
   let st = Dm.DocumentManager.validate_document st in
