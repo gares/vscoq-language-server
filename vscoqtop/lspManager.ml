@@ -200,7 +200,8 @@ let textDocumentDidOpen params =
   let textDocument = params |> member "textDocument" in
   let uri = textDocument |> member "uri" |> to_string in
   let text = textDocument |> member "text" |> to_string in
-  let st, events = Dm.DocumentManager.init (get_init_state ()) uri text in
+  let vst, opts = get_init_state () in
+  let st, events = Dm.DocumentManager.init vst ~opts ~uri ~text in
   let st = Dm.DocumentManager.validate_document st in
   Hashtbl.add states uri st;
   update_view uri st;

@@ -77,7 +77,7 @@ let diagnostics st =
     List.map mk_error_diag exec_errors @
     List.map mk_diag feedback
 
-let init (vernac_state,injections) uri text =
+let init vernac_state ~opts:injections ~uri ~text =
   let document = Document.create_document text in
   Vernacstate.unfreeze_interp_state vernac_state;
   let top = Coqargs.(dirpath_of_top (TopPhysical uri)) in
@@ -175,8 +175,8 @@ let interpret_to_next doc = (doc, []) (* TODO
 let interpret_to_end state =
   interpret_to_loc state (Document.end_loc state.document)
 
-let reset vernac_st_injections uri state =
-  fst (init vernac_st_injections uri (Document.text state.document))
+let reset (vernac_st, opts) uri state =
+  fst (init vernac_st ~opts ~uri ~text:(Document.text state.document))
 
 let retract state loc =
   let observe_loc = Option.map (fun loc' -> min loc loc') state.observe_loc in

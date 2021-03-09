@@ -22,9 +22,9 @@ type state
 type event
 type events = event Sel.event list
 
-val init : Vernacstate.t * Coqargs.injection_command list -> string -> string -> state * events
-(** [init st text] initializes the document manager with initial vernac state
-    [st] and document [test]. *)
+val init : Vernacstate.t -> opts:Coqargs.injection_command list -> uri:string -> text:string -> state * events
+(** [init st opts uri text] initializes the document manager with initial vernac state
+    [st] on which command line opts will be set. *)
 
 val apply_text_edits : state -> text_edit list -> state
 
