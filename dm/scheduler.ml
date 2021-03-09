@@ -27,7 +27,6 @@ let classify_vernac ast =
 
 module SM = Map.Make (Stateid)
 
-(* TODO should we remove ASTs from here? *)
 type task =
   | Skip of sentence_id
   | Exec of sentence_id * ast
@@ -158,7 +157,8 @@ let push_state id ast st =
     base_id st, push_id id st, Exec(id, ast)
   | VtSideff _ ->
     base_id st, extrude_side_effect id st, Exec(id,ast)
-  | _ -> assert false
+  | VtMeta -> assert false
+  | VtProofMode _ -> assert false
 
 let string_of_task (task_id,(base_id,task)) =
   let s = match task with
