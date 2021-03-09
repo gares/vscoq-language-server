@@ -74,15 +74,15 @@ let parse_loc json =
   let open Yojson.Basic.Util in
   let line = json |> member "line" |> to_int in
   let char = json |> member "character" |> to_int in
-  Dm.DocumentManager.Position.{ line ; char }
+  Dm.Types.Position.{ line ; char }
 
-let mk_loc Dm.DocumentManager.Position.{ line; char } =
+let mk_loc Dm.Types.Position.{ line; char } =
   `Assoc [
     "line", `Int line;
     "character", `Int char;
   ]
 
-let mk_range Dm.DocumentManager.Range.{ start; stop } =
+let mk_range Dm.Types.Range.{ start; stop } =
   `Assoc [
     "start", mk_loc start;
     "end", mk_loc stop;
@@ -217,7 +217,7 @@ let textDocumentDidChange params =
     let range = edit |> member "range" in
     let start = range |> member "start" |> parse_loc in
     let stop = range |> member "end" |> parse_loc in
-    Dm.DocumentManager.Range.{ start; stop }, text
+    Dm.Types.Range.{ start; stop }, text
   in
   let textEdits = List.map read_edit contentChanges in
   let st = Hashtbl.find states uri in

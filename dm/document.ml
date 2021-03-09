@@ -8,31 +8,12 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
-type sentence_id = Scheduler.sentence_id
-type sentence_id_set = Stateid.Set.t
-type ast = Scheduler.ast
+open Types
 
 let debug_document = CDebug.create ~name:"vscoq.document" ()
 
 let log msg = debug_document Pp.(fun () ->
   str @@ Format.asprintf "         [%d] %s" (Unix.getpid ()) msg)
-
-module RawPosition = struct
-
-  type t = { line : int; char : int; }
-
-  let compare pos1 pos2 =
-    match Int.compare pos1.line pos2.line with
-    | 0 -> Int.compare pos1.char pos2.char
-    | x -> x
-
-  let to_string pos = Format.sprintf "(%i,%i)" pos.line pos.char
-
-end
-
-module Range = struct
-  type t = { start : RawPosition.t; stop : RawPosition.t; }
-end
 
 type text_edit = Range.t * string
 
@@ -41,14 +22,14 @@ let top_edit_position edits =
   | [] -> assert false
   | (Range.{ start },_) :: edits ->
     List.fold_left (fun min (Range.{ start },_) ->
-    if RawPosition.compare start min < 0 then start else min) start edits
+    if Position.compare start min < 0 then start else min) start edits
 
 let bottom_edit_position edits =
   match edits with
   | [] -> assert false
   | (Range.{ stop },_) :: edits ->
     List.fold_left (fun max (Range.{ stop },_) ->
-    if RawPosition.compare stop max > 0 then stop else max) stop edits
+    if Position.compare stop max > 0 then stop else max) stop edits
 
 module RawDoc : sig
 
@@ -57,8 +38,8 @@ module RawDoc : sig
   val create : string -> t
   val text : t -> string
 
-  val position_of_loc : t -> int -> RawPosition.t
-  val loc_of_position : t -> RawPosition.t -> int
+  val position_of_loc : t -> int -> Position.t
+  val loc_of_position : t -> Position.t -> int
   val end_loc : t -> int
 
   val range_of_loc : t -> Loc.t -> Range.t
@@ -84,9 +65,9 @@ end = struct
   let position_of_loc raw loc =
     let i = ref 0 in
     while (!i < Array.length raw.lines && raw.lines.(!i) <= loc) do incr(i) done;
-    RawPosition.{ line = !i - 1; char = loc - raw.lines.(!i - 1) }
+    Position.{ line = !i - 1; char = loc - raw.lines.(!i - 1) }
 
-  let loc_of_position raw RawPosition.{ line; char } =
+  let loc_of_position raw Position.{ line; char } =
     raw.lines.(line) + char
 
   let end_loc raw =
@@ -610,11 +591,8 @@ let more_to_parse doc = doc.more_to_parse
 let parsed_loc doc = doc.parsed_loc
 let schedule doc = ParsedDoc.schedule doc.parsed_doc
 
-module Position = struct
-include RawPosition
-let of_loc doc = RawDoc.position_of_loc doc.raw_doc
-let to_loc doc = RawDoc.loc_of_position doc.raw_doc
-end
+let position_of_loc doc = RawDoc.position_of_loc doc.raw_doc
+let position_to_loc doc = RawDoc.loc_of_position doc.raw_doc
 
 let end_loc doc = RawDoc.end_loc doc.raw_doc
 

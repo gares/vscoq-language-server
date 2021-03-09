@@ -8,20 +8,16 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
+open Types
+
 (** The event manager is in charge of the actual event of tasks (as
     defined by the scheduler), caching event states and invalidating
     them. It can delegate to worker processes via DelegationManager *)
 
-open Scheduler
-open Document
-
-type sentence_id = Stateid.t
-type ast = Vernacexpr.vernac_control
-
 (** Execution state, includes the cache *)
 type state
 val init : Vernacstate.t -> state
-val invalidate : schedule -> sentence_id -> state -> state
+val invalidate : Scheduler.schedule -> sentence_id -> state -> state
 val errors : state -> (sentence_id * Loc.t option * string) list
 val feedback : state -> (sentence_id * Feedback.level * Loc.t option * string) list
 val shift_locs : state -> int -> int -> state
@@ -40,7 +36,7 @@ val handle_event : event -> state -> (state option * events)
 (** Execution happens in two steps. In particular the event one takes only
     one task at a time to ease checking for interruption *)
 type prepared_task
-val build_tasks_for : document -> state -> sentence_id -> Vernacstate.t * prepared_task list
+val build_tasks_for : Document.document -> state -> sentence_id -> Vernacstate.t * prepared_task list
 val execute : doc_id:Feedback.doc_id -> state -> Vernacstate.t * events * bool -> prepared_task -> (state * Vernacstate.t * events * bool)
 
 (** Coq toplevels for delegation without fork *)

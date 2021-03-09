@@ -7,7 +7,8 @@
 (*         *     GNU Lesser General Public License Version 2.1          *)
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
-open Document
+
+open Types
 
 let debug_dm = CDebug.create ~name:"vscoq.documentManager" ()
 
@@ -26,7 +27,7 @@ type state = {
   uri : string;
   init_vs : Vernacstate.t;
   opts : Coqargs.injection_command list;
-  document : document;
+  document : Document.document;
   execution_state : ExecutionManager.state;
   observe_loc : int option; (* TODO materialize observed loc and line-by-line execution status *)
 }
@@ -47,7 +48,7 @@ let inject_em_events events = List.map inject_em_event events
 type events = event Sel.event list
 
 let executed_ranges doc execution_state loc =
-  let valid_ids = List.map (fun s -> s.id) @@ Document.sentences_before doc loc in
+  let valid_ids = List.map (fun s -> s.Document.id) @@ Document.sentences_before doc loc in
   let executed_ids = List.filter (ExecutionManager.is_executed execution_state) valid_ids in
   let remotely_executed_ids = List.filter (ExecutionManager.is_remotely_executed execution_state) valid_ids in
   List.map (Document.range_of_exec_id doc) executed_ids,
@@ -62,7 +63,7 @@ let executed_ranges st =
 let make_diagnostic doc id oloc message severity =
   let range =
     match oloc with
-    | None -> range_of_exec_id doc id
+    | None -> Document.range_of_exec_id doc id
     | Some loc ->
       Document.range_of_coq_loc doc loc
   in
@@ -98,7 +99,7 @@ let reset { uri; opts; init_vs; document } =
 
 let interpret_to_loc state loc : (state * events) =
     let parsing_state_hook = ExecutionManager.get_parsing_state_after state.execution_state in
-    let invalid_ids, document = validate_document ~parsing_state_hook state.document in
+    let invalid_ids, document = Document.validate_document ~parsing_state_hook state.document in
     let execution_state =
       List.fold_left (fun st id ->
         ExecutionManager.invalidate (Document.schedule state.document) id st
@@ -107,7 +108,7 @@ let interpret_to_loc state loc : (state * events) =
     (* We jump to the sentence before the position, otherwise jumping to the
     whitespace at the beginning of a sentence will observe the state after
     executing the sentence, which is unnatural. *)
-    match find_sentence_before state.document loc with
+    match Document.find_sentence_before state.document loc with
     | None -> (* document is empty *) (state, [])
     | Some { id; stop; start } ->
       let vst_for_next_todo, todo = ExecutionManager.build_tasks_for state.document state.execution_state id in
@@ -166,7 +167,7 @@ let interpret_to_loc ~after ?(progress_hook=fun doc -> Lwt.return ()) state loc 
 *)
 
 let interpret_to_position state pos =
-  let loc = Document.Position.to_loc state.document pos in
+  let loc = Document.position_to_loc state.document pos in
   interpret_to_loc state loc
 
 let interpret_to_previous doc =
@@ -190,13 +191,13 @@ let retract state loc =
   { state with observe_loc }
 
 let apply_text_edits state edits =
-  let document = apply_text_edits state.document edits in
+  let document = Document.apply_text_edits state.document edits in
   let state = { state with document } in
   retract state (Document.parsed_loc document)
 
 let validate_document state =
   let parsing_state_hook = ExecutionManager.get_parsing_state_after state.execution_state in
-  let invalid_ids, document = validate_document ~parsing_state_hook state.document in
+  let invalid_ids, document = Document.validate_document ~parsing_state_hook state.document in
   { state with document }
 
 let handle_event ev st =
@@ -222,7 +223,7 @@ let get_current_proof st =
   match Option.bind st.observe_loc (Document.find_sentence_before st.document) with
   | None -> None
   | Some sentence ->
-    let pos = Document.Position.of_loc st.document sentence.stop in
+    let pos = Document.position_of_loc st.document sentence.stop in
     match ExecutionManager.get_proofview st.execution_state sentence.id with
     | None -> None
     | Some pv -> Some (pv, pos)
@@ -230,7 +231,3 @@ let get_current_proof st =
 let pr_event = function
 | ExecuteToLoc _ -> Pp.str "ExecuteToLoc"
 | ExecutionManagerEvent ev -> ExecutionManager.pr_event ev
-
-module Range = Document.Range
-module Position = Document.Position
-type text_edit = Document.text_edit

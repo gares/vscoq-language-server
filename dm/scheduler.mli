@@ -8,6 +8,8 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
+open Types
+
 (** The scheduler is the component in charge of planning the execution of
     sentences. It also defines the task delegation strategy, and computes
     dependencies between tasks. Scheduling can be done incrementally. *)
@@ -16,10 +18,6 @@ type state
 (** State for incremental schedule construction *)
 
 val initial_state : state
-
-type sentence_id = Stateid.t
-type ast = Vernacexpr.vernac_control
-type sentence_id_set = Stateid.Set.t
 
 type vernac_classification =
   ParsingEffect | StateEffect

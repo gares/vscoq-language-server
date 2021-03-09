@@ -8,9 +8,7 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
-module Range : module type of Document.Range
-module Position : module type of Document.Position
-type text_edit = Range.t * string
+open Types
 
 (** The document manager holds the view that Coq has of the currently open
     states. It makes it easy for IDEs to handle text edits, navigate

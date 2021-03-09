@@ -1,7 +1,7 @@
 (library
  (name dm)
  (private_modules scheduler delegationManager document)
- (modules delegationManager parTactic documentManager document executionManager scheduler)
+ (modules delegationManager parTactic documentManager document executionManager scheduler types)
  (flags -rectypes)
  (libraries coq-core.sysinit coq-core.vernac sel))
 

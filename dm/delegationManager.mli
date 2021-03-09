@@ -8,6 +8,8 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
+open Types
+
 (* This component handles delegation to workers. It gathers all the code for
    process management across supported OSes (fork on Unix, create_process +
    marshall on Windows).
@@ -18,8 +20,6 @@
    parsing extra argument using [parse_options] then sets up
    a link with master via [setup_plumbing] which provides a function to be
    called to send updates back *)
-
-type sentence_id = Stateid.t
 
 module type Job = sig
   (** The data out of which the job can be performed. Must be marshalable *)
