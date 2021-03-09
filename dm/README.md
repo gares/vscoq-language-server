@@ -9,10 +9,9 @@ also generate binaries which do need to see these modules.
   its execution. It knows which Coq sentences change the parser and which
   sentences bracket a proof. A schedule is built incrementally, as sentences
   are discovered. The component holds a notion of dependency among sentences
-  which is used to invalidate upon change. This component is internal.
+  which is used to invalidate upon change.
 
 - [parTactic](parTactic.mli) implements the `par:` combinator based on SEL.
-  This component is internal.
 
 - [delegationManager](delegationManager.mli) implements an OS agnostic way to
   delegate a job to a worker process.
