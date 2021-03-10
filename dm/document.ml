@@ -177,7 +177,7 @@ module ParsedDoc : sig
 
   val diff : sentence list -> pre_sentence list -> diff list
 
-  val string_of_diff : diff -> string
+  val string_of_diff : t -> diff list -> string
 
   val range_of_id : RawDoc.t -> t -> Stateid.t -> Range.t
 
@@ -393,10 +393,16 @@ let rec diff old_sentences new_sentences =
       Equal [(old_sentence.id,new_sentence)] :: diff old_sentences new_sentences
     else Deleted [old_sentence.id] :: Added [new_sentence] :: diff old_sentences new_sentences
 
-let string_of_diff = function
-  | Deleted ids -> "- " ^ String.concat "," (List.map Stateid.to_string ids)
-  | Added sentences -> String.concat "\n" (List.map (fun (s : pre_sentence) -> "+ " ^ string_of_parsed_ast s.ast) sentences)
-  | Equal l -> "= " ^ String.concat "," (List.map (fun (id,_) -> Stateid.to_string id) l)
+let string_of_diff_item doc = function
+  | Deleted ids ->
+       ids |> List.map (fun id -> Printf.sprintf "- (id: %d) %s" (Stateid.to_int id) (string_of_parsed_ast (Option.get (get_sentence doc id)).ast))
+  | Added sentences ->
+       sentences |> List.map (fun (s : pre_sentence) -> Printf.sprintf "+ %s" (string_of_parsed_ast s.ast))
+  | Equal l ->
+       l |> List.map (fun (id, (s : pre_sentence)) -> Printf.sprintf "= (id: %d) %s" (Stateid.to_int id) (string_of_parsed_ast s.ast))
+
+let string_of_diff doc l =
+  String.concat "\n" (List.flatten (List.map (string_of_diff_item doc) l))
 
 end
 
@@ -528,7 +534,7 @@ let invalidate ~parsing_state_hook top_edit parsed_doc new_sentences =
   let (_,_parsing_state,scheduler_state) = Option.get @@ ParsedDoc.state_at_pos ~parsing_state_hook parsed_doc top_edit in
   let old_sentences = ParsedDoc.sentences_after parsed_doc top_edit in
   let diff = ParsedDoc.diff old_sentences new_sentences in
-  log @@ String.concat "\n" (List.map ParsedDoc.string_of_diff diff);
+  log @@ "diff:\n" ^ ParsedDoc.string_of_diff parsed_doc diff;
   invalidate_diff parsed_doc scheduler_state Stateid.Set.empty diff
 
 (** Validate document when raw text has changed *)

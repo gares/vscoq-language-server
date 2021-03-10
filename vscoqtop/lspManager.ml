@@ -42,7 +42,7 @@ let lsp : event Sel.event =
   Sel.on_httpcle Unix.stdin (function
     | Ok buff ->
       begin
-        log ~verbosity:2 "[T] UI req ready";
+        log ~verbosity:2 "UI req ready";
         try LspManagerEvent (Request (Some (Yojson.Basic.from_string (Bytes.to_string buff))))
         with exn ->
           log ~verbosity:1 @@ "failed to decode json";
@@ -311,7 +311,7 @@ let handle_lsp_event = function
       let id = Option.default 0 (req |> member "id" |> to_int_option) in
       let method_name = req |> member "method" |> to_string in
       let params = req |> member "params" in
-      log ~verbosity:1 @@ "[T] ui step: " ^ method_name;
+      log ~verbosity:1 @@ "ui request: " ^ method_name;
       let more_events = dispatch_method ~id method_name params in
       more_events @ [lsp]
 
