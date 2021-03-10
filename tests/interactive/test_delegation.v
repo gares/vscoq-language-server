@@ -1,7 +1,7 @@
 Lemma x : True /\ True.
-Proof using.
+Proof  using.
 split.
-par: exact I.
+all: exact I.
 Qed.
 
 Print x.
