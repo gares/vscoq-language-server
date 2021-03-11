@@ -71,12 +71,16 @@ let make_diagnostic doc id oloc message severity =
 
 let diagnostics st =
   let parse_errors = Document.parse_errors st.document in
-  let exec_errors = ExecutionManager.errors st.execution_state in
-  let feedback = ExecutionManager.feedback st.execution_state in
-  let mk_diag (id,lvl,oloc,msg) =
+  let all_exec_errors = ExecutionManager.errors st.execution_state in
+  let all_feedback = ExecutionManager.feedback st.execution_state in
+  (* we are resilient to a state where invalidate was not called yet *)
+  let exists (id,_) = Option.has_some (Document.get_sentence st.document id) in
+  let exec_errors = all_exec_errors |> List.filter exists in
+  let feedback = all_feedback |> List.filter exists in
+  let mk_diag (id,(lvl,oloc,msg)) =
     make_diagnostic st.document id oloc msg lvl
   in
-  let mk_error_diag (id,oloc,msg) = mk_diag (id,Feedback.Error,oloc,msg) in
+  let mk_error_diag (id,(oloc,msg)) = mk_diag (id,(Feedback.Error,oloc,msg)) in
   List.map mk_error_diag parse_errors @
     List.map mk_error_diag exec_errors @
     List.map mk_diag feedback

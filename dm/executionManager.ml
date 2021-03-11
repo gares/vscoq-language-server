@@ -312,11 +312,11 @@ let build_tasks_for doc st id =
 let errors st =
   List.fold_left (fun acc (id, (p,_)) ->
     match p with
-    | Done (Error ((loc,e),_st)) -> (id,loc,e) :: acc
+    | Done (Error ((loc,e),_st)) -> (id,(loc,e)) :: acc
     | _ -> acc)
     [] @@ SM.bindings st.of_sentence
 
-let mk_feedback id (lvl,loc,msg) = (id,lvl,loc,Pp.string_of_ppcmds msg)
+let mk_feedback id (lvl,loc,msg) = (id,(lvl,loc,Pp.string_of_ppcmds msg))
 
 let feedback st =
   List.fold_left (fun acc (id, (_,l)) -> List.map (mk_feedback id) l @ acc) [] @@ SM.bindings st.of_sentence
@@ -365,7 +365,8 @@ let rec invalidate schedule id st =
   let old_jobs = Queue.copy jobs in
   let removed = ref [] in
   Queue.clear jobs;
-  Queue.iter (fun ((_, { ProofJob.terminator_id; tasks }) as job) -> if terminator_id != id then Queue.push job jobs else removed := tasks :: !removed) old_jobs;
+  Queue.iter (fun ((_, { ProofJob.terminator_id; tasks }) as job) ->
+    if terminator_id != id then Queue.push job jobs else removed := tasks :: !removed) old_jobs;
   let of_sentence = List.fold_left invalidate1 of_sentence
     List.(concat (map (fun tasks -> map id_of_prepared_task tasks) !removed)) in
   if of_sentence == st.of_sentence then st else

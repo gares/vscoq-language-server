@@ -31,7 +31,7 @@ val validate_document : parsing_state_hook:parsing_state_hook ->
 (** [validate_document doc] parses the document without forcing any execution
     and returns the set of invalidated sentences *)
 
-val parse_errors : document -> (sentence_id * Loc.t option * string) list
+val parse_errors : document -> (sentence_id * (Loc.t option * string)) list
 (** [parse_errors doc] returns the list of sentences which failed to parse
     (see validate_document) together with their error message *)
 

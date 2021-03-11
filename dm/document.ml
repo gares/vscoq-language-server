@@ -148,7 +148,7 @@ module ParsedDoc : sig
 
   val parsed_ranges : RawDoc.t -> t -> Range.t list
 
-  val parse_errors : RawDoc.t -> t -> (Stateid.t * Loc.t option * string) list
+  val parse_errors : RawDoc.t -> t -> (Stateid.t * (Loc.t option * string)) list
 
   val add_sentence : t -> int -> int -> parsed_ast -> Vernacstate.Parser.t -> Scheduler.state -> t * Scheduler.state
   val remove_sentence : t -> sentence_id -> t
@@ -222,7 +222,7 @@ end = struct
     let collect_error id sentence acc =
       match sentence.ast with
       | ParseError (oloc, message) ->
-        (id, oloc, message) :: acc
+        (id, (oloc, message)) :: acc
       | ValidAst _ -> acc
     in
     SM.fold collect_error parsed.sentences_by_id []
