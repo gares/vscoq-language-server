@@ -25,7 +25,7 @@ let states : (string, Dm.DocumentManager.state) Hashtbl.t = Hashtbl.create 39
 
 let lsp_debug = CDebug.create ~name:"vscoq.lspManager" ()
 
-let log ~verbosity:_ msg = lsp_debug Pp.(fun () ->
+let log msg = lsp_debug Pp.(fun () ->
   str @@ Format.asprintf "       [%d] %s" (Unix.getpid ()) msg)
 
 (*let string_field name obj = Yojson.Basic.to_string (List.assoc name obj)*)
@@ -42,14 +42,14 @@ let lsp : event Sel.event =
   Sel.on_httpcle Unix.stdin (function
     | Ok buff ->
       begin
-        log ~verbosity:2 "UI req ready";
+        log "UI req ready";
         try LspManagerEvent (Request (Some (Yojson.Basic.from_string (Bytes.to_string buff))))
         with exn ->
-          log ~verbosity:1 @@ "failed to decode json";
+          log @@ "failed to decode json";
           LspManagerEvent (Request None)
       end
     | Error exn ->
-        log ~verbosity:1 @@ ("failed to read message: " ^ Printexc.to_string exn);
+        log @@ ("failed to read message: " ^ Printexc.to_string exn);
         LspManagerEvent (Request None))
 
 let output_json obj =
@@ -301,7 +301,7 @@ let dispatch_method ~id method_name params : events =
   | "coqtop/stepForward" -> coqtopStepForward ~id params |> inject_dm_events
   | "coqtop/resetCoq" -> coqtopResetCoq ~id params; []
   | "coqtop/interpretToEnd" -> coqtopInterpretToEnd ~id params |> inject_dm_events
-  | _ -> log ~verbosity:1 @@ "Ignoring call to unknown method: " ^ method_name; []
+  | _ -> log @@ "Ignoring call to unknown method: " ^ method_name; []
 
 let handle_lsp_event = function
   | Request None ->
@@ -311,7 +311,7 @@ let handle_lsp_event = function
       let id = Option.default 0 (req |> member "id" |> to_int_option) in
       let method_name = req |> member "method" |> to_string in
       let params = req |> member "params" in
-      log ~verbosity:1 @@ "ui request: " ^ method_name;
+      log @@ "ui request: " ^ method_name;
       let more_events = dispatch_method ~id method_name params in
       more_events @ [lsp]
 
@@ -324,7 +324,7 @@ let handle_event = function
   | DocumentManagerEvent (uri, e) ->
     begin match Hashtbl.find_opt states uri with
     | None ->
-      log ~verbosity:1 @@ "ignoring event on non-existing document";
+      log @@ "ignoring event on non-existing document";
       []
     | Some st ->
       let (ost, events) = Dm.DocumentManager.handle_event e st in
