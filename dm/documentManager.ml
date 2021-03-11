@@ -198,7 +198,11 @@ let apply_text_edits state edits =
 let validate_document state =
   let parsing_state_hook = ExecutionManager.get_parsing_state_after state.execution_state in
   let invalid_ids, document = Document.validate_document ~parsing_state_hook state.document in
-  { state with document }
+  let execution_state =
+    List.fold_left (fun st id ->
+      ExecutionManager.invalidate (Document.schedule state.document) id st
+      ) state.execution_state (Stateid.Set.elements invalid_ids) in
+  { state with document; execution_state }
 
 let handle_event ev st =
   match ev with
