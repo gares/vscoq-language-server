@@ -219,7 +219,7 @@ let worker_execute ~doc_id last_step_id ~send_back (vs,events) = function
     (vs, events)
   | PExec (id,ast) ->
     let vs, v, ev = interp_ast ~doc_id ~state_id:id vs ast in
-    let v = if Stateid.equal id last_step_id then ensure_proof_over v else purge_state v in
+    let v = if Stateid.equal id last_step_id then purge_state (ensure_proof_over v) else purge_state v in
     send_back (ProofJob.UpdateExecStatus (id,v));
     (vs, events @ ev)
   | _ -> assert false
@@ -256,7 +256,9 @@ let execute ~doc_id st (vs, events, interrupted) task =
             let last_vs, v, assign = interp_qed_delayed ~state_id:terminator_id vs in
             let complete_job status =
               try match status with
-              | Success None -> assert false
+              | Success None ->
+                log "Resolved future (without sending back the witness)";
+                assign (`Exn (Failure "no proof",Exninfo.null))
               | Success (Some vernac_st) ->
                 let f proof =
                   log "Resolved future";
