@@ -209,8 +209,12 @@ let purge_state = function
 
 let ensure_proof_over = function
   | Success (Some st) as x ->
-      Vernacstate.LemmaStack.with_top (Option.get @@ st.Vernacstate.lemmas)
-        ~f:(fun p -> if Proof.is_done @@ Declare.Proof.get p then x else Error((None,"Proof is not finished"),None))
+     (* uncomment to see the size of state/proof.
+      log @@ Printf.sprintf "final state: %d\n" (Bytes.length @@ Marshal.to_bytes x []);
+      let f proof = log @@ Printf.sprintf "final proof: %d\n" (Bytes.length @@ Marshal.to_bytes (Declare.Proof.return_proof proof) []) in
+      Vernacstate.LemmaStack.with_top (Option.get @@ st.Vernacstate.lemmas) ~f; *)
+     Vernacstate.LemmaStack.with_top (Option.get @@ st.Vernacstate.lemmas)
+       ~f:(fun p -> if Proof.is_done @@ Declare.Proof.get p then x else Error((None,"Proof is not finished"),None))
   | x -> x
 
 (* TODO move to proper place *)
