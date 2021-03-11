@@ -132,7 +132,7 @@ let interpret_to_loc state loc : (state * events) =
     (* We jump to the sentence before the position, otherwise jumping to the
     whitespace at the beginning of a sentence will observe the state after
     executing the sentence, which is unnatural. *)
-    match Document.find_sentence (*_before*) state.document loc with
+    match Document.find_sentence_before state.document loc with
     | None -> (* document is empty *) (state, [])
     | Some { id; stop; start } ->
       let vst_for_next_todo, todo = ExecutionManager.build_tasks_for state.document state.execution_state id in
