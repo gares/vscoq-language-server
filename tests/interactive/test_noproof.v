@@ -1,6 +1,9 @@
+(* jump to the bottom, then come up, change the value of x and go back to the bottom *)
 
-Check forall x : nat, x = x.
+Definition x := 2.
 
 Print bool.
 
-Definition t := 3 + 3.
+Definition t := 3 + x.
+
+Eval compute in t.

@@ -116,17 +116,20 @@ let publish_diagnostics uri doc =
   output_json @@ mk_notification ~event:"textDocument/publishDiagnostics" ~params
 
 let send_highlights uri doc =
-  let executed_ranges, incomplete_ranges = Dm.DocumentManager.executed_ranges doc in
-  let executed_ranges = List.map mk_range executed_ranges in
-  let incomplete_ranges = List.map mk_range incomplete_ranges in
+  let { Dm.DocumentManager.parsed; checked; checked_by_delegate; legacy_highlight } =
+    Dm.DocumentManager.executed_ranges doc in
+  let parsed = List.map mk_range parsed in
+  let checked = List.map mk_range checked in
+  let checked_by_delegate = List.map mk_range checked_by_delegate in
+  let legacy_highlight = List.map mk_range legacy_highlight in
   let params = `Assoc [
     "uri", `String uri;
     "stateErrorRange", `List [];
-    "parsingRange", `List [];
-    "processingRange", `List [];
-    "incompleteRange", `List incomplete_ranges;
+    "parsingRange", `List parsed;
+    "processingRange", `List checked;
+    "incompleteRange", `List checked_by_delegate;
     "axiomRange", `List [];
-    "processedRange", `List executed_ranges;
+    "processedRange", `List legacy_highlight;
   ]
   in
   output_json @@ mk_notification ~event:"coqtop/updateHighlights" ~params

@@ -53,7 +53,15 @@ val interpret_to_end : state -> (state * events)
 val reset : state -> state
 (** resets Coq *)
 
-val executed_ranges : state -> Range.t list * Range.t list
+
+type exec_overview = {
+  parsed : Range.t list;
+  checked : Range.t list;
+  checked_by_delegate : Range.t list;
+  legacy_highlight : Range.t list;
+}
+
+val executed_ranges : state -> exec_overview
 (** returns the ranges corresponding to the sentences
     that have been executed and remotely executes *)
 
