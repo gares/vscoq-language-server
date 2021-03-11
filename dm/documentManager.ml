@@ -77,9 +77,8 @@ let executed_ranges doc execution_state loc =
 
 let executed_ranges st =
   match st.observe_loc with
-  | None -> [], []
-  | Some loc ->
-    executed_ranges st.document st.execution_state loc
+  | None -> executed_ranges st.document st.execution_state (Document.end_loc st.document)
+  | Some loc -> executed_ranges st.document st.execution_state loc
 
 let make_diagnostic doc id oloc message severity =
   let range =
