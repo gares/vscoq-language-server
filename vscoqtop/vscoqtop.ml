@@ -27,7 +27,18 @@ let loop injections =
   in
   try loop [LspManager.lsp]
   with exn ->
-    log @@ Pp.string_of_ppcmds @@ CErrors.print_no_report exn
+    let info = Exninfo.capture exn in
+    log "";
+    log "";
+    log "";
+    log @@ "==========================================================";
+    log @@ Pp.string_of_ppcmds @@ CErrors.iprint_no_report info;
+    log @@ "==========================================================";
+    log "";
+    log "";
+    log "";
+    log ""
+;;
 
 let vscoqtop_specific_usage = {
   Usage.executable_name = "vscoqtop";
@@ -55,5 +66,6 @@ let _ =
   let injections = Coqinit.init_runtime opts in
   CDebug.set_debug_all true;
   Sys.(set_signal sigint Signal_ignore);
+  Exninfo.record_backtrace true;
   Feedback.del_feeder initialization_feeder;
   loop injections
