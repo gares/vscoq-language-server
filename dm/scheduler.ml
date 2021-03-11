@@ -46,9 +46,9 @@ type proof_block = {
 }
 
 type state = {
-  document_scope : sentence_id list; (* List of sentences whose effect scope is the document *)
-  proof_blocks : proof_block list;
-  section_depth : int;
+  document_scope : sentence_id list; (* List of sentences whose effect scope is the document that follows them *)
+  proof_blocks : proof_block list; (* List of sentences whose effect scope ends with the Qed *)
+  section_depth : int; (* Statically computed section nesting *)
 }
 
 let initial_state = {
@@ -154,7 +154,9 @@ let push_state id ast st =
   | VtQed _ ->
     let st = flatten_proof_block st in
     base_id st, push_id id st, Exec(id,ast)
-  | (VtQuery | VtProofStep _) ->
+  | VtQuery -> (* queries have no impact, we don't push them *)
+    base_id st, st, Query(id, ast)
+  | VtProofStep _ ->
     base_id st, push_id id st, Exec(id, ast)
   | VtSideff _ ->
     base_id st, extrude_side_effect id st, Exec(id,ast)
@@ -199,9 +201,14 @@ let schedule_sentence (id,oast) st schedule =
     in
     SM.update x upd deps
   in
+  (* We say that all previous sentences, in a still open proof or toplevel, impact this one *)
   let dependencies =
-    List.fold_left (fun deps l -> List.fold_left (fun deps x -> add_dep deps x id) deps l) schedule.dependencies (List.map (fun b -> b.proof_sentences) st.proof_blocks@[st.document_scope]) (* TODO simplify *)
+    let in_scope =
+      List.concat @@ List.map (fun b -> b.proof_sentences) st.proof_blocks@[st.document_scope] in
+    List.fold_left (fun deps x -> add_dep deps x id) schedule.dependencies in_scope
   in
+  (* This new sentence impacts no sentence (yet) *)
+  let dependencies = SM.add id Stateid.Set.empty dependencies in
   st, { tasks; dependencies }
 
 let task_for_sentence schedule id =

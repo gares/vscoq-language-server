@@ -46,6 +46,7 @@ let init vernac_state = {
 type prepared_task =
   | PSkip of sentence_id
   | PExec of sentence_id * ast
+  | PQuery of sentence_id * ast
   | PDelegate of { terminator_id: sentence_id;
                    opener_id: sentence_id;
                    last_step_id: sentence_id;
@@ -194,11 +195,12 @@ let prepare_task doc task : prepared_task =
      let tasks = List.map (remotize doc) tasks_ids in
      let last_step_id = if CList.is_empty tasks_ids then terminator_id (* FIXME probably wrong, check what to do with empty proofs *) else CList.last tasks_ids in
      PDelegate {terminator_id; opener_id; last_step_id; tasks}
-  | _ -> CErrors.anomaly Pp.(str "task not supported yet")
+  | Query(id,ast) -> PQuery(id,ast)
 
 let id_of_prepared_task = function
   | PSkip id -> id
   | PExec(id, _) -> id
+  | PQuery(id, _) -> id
   | PDelegate { terminator_id } -> terminator_id
 
 let purge_state = function
@@ -239,6 +241,10 @@ let execute ~doc_id st (vs, events, interrupted) task =
           (st, vs, events, false)
       | PExec (id,ast) ->
           let vs, v, ev = interp_ast ~doc_id ~state_id:id vs ast in
+          let st = update st id v in
+          (st, vs, events @ ev, false)
+      | PQuery (id,ast) ->
+          let _, v, ev = interp_ast ~doc_id ~state_id:id vs ast in
           let st = update st id v in
           (st, vs, events @ ev, false)
       | PDelegate { terminator_id; opener_id; last_step_id; tasks } ->
