@@ -472,7 +472,7 @@ let rec parse_more parsing_state stream raw parsed =
       let sstr = Stream.of_string str in
       let lex = CLexer.Lexer.tok_func sstr in
       let tokens = stream_tok 0 [] lex begin_line begin_char in
-      let sentence = { ast = ValidAst(ast,tokens); start; stop; parsing_state } in
+      let sentence = { ast = ValidAst(ast,tokens); start = begin_char; stop; parsing_state } in
       let parsed = sentence :: parsed in
       match Scheduler.classify_vernac ast with
       | ParsingEffect -> (* parsing more would require execution *)
