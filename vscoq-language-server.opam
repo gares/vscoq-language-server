@@ -8,7 +8,7 @@ bug-reports: "https://github.com/coq-community/vscoq-language-server/issues"
 dev-repo: "git+https://github.com/coq-community/vscoq-language-server"
 
 build: [ ["dune" "subst"] {pinned}
-         [ "dune" "build" "-pvscoq-language-server" ]
+         [ "dune" "build" "-pvscoq-language-server,sel" ]
        ]
 install: [ "dune" "install" ]
 depends: [
