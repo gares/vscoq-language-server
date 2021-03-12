@@ -8,23 +8,18 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
-type sentence_id = Stateid.t
-type ast = Vernacexpr.vernac_control
-type sentence_id_set = Stateid.Set.t
+open Types
 
 let debug_scheduler = CDebug.create ~name:"vscoq.scheduler" ()
 
 let log msg = debug_scheduler Pp.(fun () ->
   str @@ Format.asprintf "        [%d] %s" (Unix.getpid ()) msg)
 
-type vernac_classification =
-  ParsingEffect | StateEffect
-
-let classify_vernac ast =
+let changes_the_parser ast =
   let open Vernacextend in
   match Vernac_classifier.classify_vernac ast with
-  | VtSideff (_, VtNow) -> ParsingEffect
-  | _ -> StateEffect
+  | VtSideff (_, VtNow) -> true
+  | _ -> false
 
 module SM = Map.Make (Stateid)
 

@@ -294,14 +294,12 @@ end = struct
       | ParseError _ ->
         Some (stop, parsing_state, scheduler_state_after)
       | ValidAst (ast, _tokens) ->
-        begin match Scheduler.classify_vernac ast with
-        | ParsingEffect ->
-          begin match parsing_state_hook id with
+        if Scheduler.changes_the_parser ast then
+          match parsing_state_hook id with
           | None -> None
           | Some parsing_state -> Some (stop, parsing_state, scheduler_state_after)
-          end
-        | StateEffect -> Some (stop, parsing_state, scheduler_state_after)
-        end
+        else
+          Some (stop, parsing_state, scheduler_state_after)
       end
     | None -> Some (-1, Vernacstate.Parser.init (), Scheduler.initial_state)
 
@@ -474,10 +472,9 @@ let rec parse_more parsing_state stream raw parsed =
       let tokens = stream_tok 0 [] lex begin_line begin_char in
       let sentence = { ast = ValidAst(ast,tokens); start = begin_char; stop; parsing_state } in
       let parsed = sentence :: parsed in
-      match Scheduler.classify_vernac ast with
-      | ParsingEffect -> (* parsing more would require execution *)
+      if Scheduler.changes_the_parser ast then
         List.rev parsed, true
-      | StateEffect ->
+      else
         parse_more parsing_state stream raw parsed
     end
     with

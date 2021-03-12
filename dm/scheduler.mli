@@ -19,10 +19,9 @@ type state
 
 val initial_state : state
 
-type vernac_classification =
-  ParsingEffect | StateEffect
-
-val classify_vernac : ast -> vernac_classification
+(** Since it's the document module which parses, it needs to know when
+    some execution is needed *)
+val changes_the_parser : ast -> bool
 
 type task =
   | Skip of sentence_id
